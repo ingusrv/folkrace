@@ -1,0 +1,75 @@
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    --bg-color: #404040;
+    --fg-color: white;
+    --text-color: black;
+
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    font-family: "noto sans";
+}
+
+header {
+    background-color: var(--fg-color);
+    margin-bottom: 4em;
+    font-size: 1.25rem;
+}
+
+header ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: max-content max-content max-content auto;
+}
+
+header ul li {
+    padding: 1em;
+}
+
+header ul li:nth-child(1) {
+    border-bottom: 5px solid lightskyblue;
+}
+
+header li:last-child {
+    outline: none;
+    display: block;
+    margin-left: auto;
+}
+
+header a {
+    text-decoration: none;
+    color: inherit;
+}
+
+main {
+    width: 100rem;
+    margin: auto;
+    display: grid;
+    place-items: center;
+    gap: 4em;
+}
+
+.panel {
+    background-color: var(--fg-color);
+    width: 100%;
+    padding: 2em;
+}
+
+.robot-info {
+    background-color: var(--fg-color);
+    width: 100%;
+    height: 10rem;
+    padding: 2em;
+}
+
+.run-table {
+    width: 100%;
+}
