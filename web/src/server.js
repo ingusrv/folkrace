@@ -26,6 +26,20 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "pages")));
 app.use(favicon(path.join(__dirname, "pages/favicon.ico")));
 
+// check if root/default account exists
+const admin = await getUser(client, "admin");
+if (!admin) {
+    console.log("No default account found, creating new");
+    const admin = {
+        username: "admin",
+        password: await bcrypt.hash("admin", saltRounds),
+        root: true,
+        admin: true,
+        createdAt: new Date().toLocaleString()
+    };
+    await addUser(client, admin);
+}
+
 // auth
 app.use((req, res, next) => {
     if (req.path === "/login/") {
