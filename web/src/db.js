@@ -24,7 +24,6 @@ export async function getUser(client, username) {
     const res = await client.db("folkrace").collection("users").findOne({ username: username });
     if (res) {
         console.log(`user ${username} found`);
-        console.log(res);
         return res;
     } else {
         console.log(`user ${username} not found`);
@@ -38,7 +37,6 @@ export async function getUsers(client) {
     console.log("All users: ");
     res.forEach(element => {
         console.log(element.username);
-        console.log(element);
     });
     return res;
 }
@@ -84,7 +82,6 @@ export async function getRobot(client, robotId) {
     const cursor = client.db("folkrace").collection("robots").find({ robotId: robotId });
     if (res) {
         console.log(`robot ${robotId} found`);
-        console.log(res);
         return res;
     } else {
         console.log(`robot ${robotId} not found`);
