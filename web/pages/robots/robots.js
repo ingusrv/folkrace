@@ -42,7 +42,7 @@ function createPanel(robotData) {
     // TODO: fix potential XSS
     div.innerHTML = `
     <div class="panel grid-1col-gap relative" data-robot-id="${robotData.robotId}">
-        <h2>Robots '${robotData.robotId}'</h2>
+        <h2 class="margin-0">Robots '${robotData.robotId}'</h2>
         <button class="delete-robot" data-delete-robot>Izdzēst</button>
         <div class="connection-token" data-connection-token>
             <button class="show-connection-token" data-show-connection-token>Parādīt savienošanās atslēgu</button>
@@ -50,14 +50,14 @@ function createPanel(robotData) {
             <button class="generate-new-token" data-generate-new-token>Izveidot jaunu savienošanās atslēgu</button>
         </div>
         <div class="server-controls" data-server-controls>
-            <button class="start-button" data-connect-to-server>Savienoties</button>
-            <p class="status">Savienojuma statuss: <span class="red-status" data-server-status>Nav Savienots</span>
+            <button class="inline" data-connect-to-server>Savienoties</button>
+            <p class="inline">Savienojuma statuss: <span class="text-red" data-server-status>Nav Savienots</span>
             </p>
         </div>
         <div class="robot-controls hidden" data-robot-controls>
-            <button class="start-button" data-start-robot>Sākt robota
+            <button class="inline" data-start-robot>Sākt robota
                 programmu</button>
-            <p class="status">Robota statuss: <span class="gray-status" data-robot-status>Bezsaistē</span></p>
+            <p class="inline">Robota statuss: <span class="text-gray" data-robot-status>Bezsaistē</span></p>
         </div>
     </div>
     `;
@@ -143,8 +143,8 @@ function setupPanels() {
             ws.addEventListener("close", (e) => {
                 console.log(e);
                 connectToServer.innerText = "Savienoties";
-                serverStatus.classList.remove("green-status");
-                serverStatus.classList.add("red-status");
+                serverStatus.classList.remove("text-green");
+                serverStatus.classList.add("text-red");
                 serverStatus.innerText = "Nav savienots";
                 robotControls.classList.add("hidden");
             });
@@ -152,8 +152,8 @@ function setupPanels() {
                 const data = JSON.parse(e.data);
                 console.log(data);
                 if (data.code === 200 && data.type === "connect") {
-                    serverStatus.classList.remove("red-status");
-                    serverStatus.classList.add("green-status");
+                    serverStatus.classList.remove("text-red");
+                    serverStatus.classList.add("text-green");
                     serverStatus.innerText = data.message;
                     robotControls.classList.remove("hidden");
                     startRobot.addEventListener("click", (e) => {
@@ -170,16 +170,16 @@ function setupPanels() {
                     return;
                 }
                 if (data.code === 200 && data.type === "started") {
-                    robotStatus.classList.remove("gray-status");
-                    robotStatus.classList.remove("red-status");
-                    robotStatus.classList.add("green-status");
+                    robotStatus.classList.remove("text-gray");
+                    robotStatus.classList.remove("text-red");
+                    robotStatus.classList.add("text-green");
                     robotStatus.innerText = data.message;
                     return;
                 }
                 if (data.code === 200 && data.type === "stopped") {
-                    robotStatus.classList.remove("gray-status");
-                    robotStatus.classList.remove("green-status");
-                    robotStatus.classList.add("red-status");
+                    robotStatus.classList.remove("text-gray");
+                    robotStatus.classList.remove("text-green");
+                    robotStatus.classList.add("text-red");
                     robotStatus.innerText = data.message;
                     return;
                 }

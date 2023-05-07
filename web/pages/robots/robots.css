@@ -1,77 +1,5 @@
-*,
-*::before,
-*::after {
-    box-sizing: border-box;
-}
-
-body {
-    --bg-color: #404040;
-    --fg-color: white;
-    --text-color: black;
-
-    background-color: var(--bg-color);
-    color: var(--text-color);
-    margin: 0;
-    padding: 0;
-    font-family: "noto sans";
-}
-
-header {
-    background-color: var(--fg-color);
-    margin-bottom: 4em;
-    font-size: 1.25rem;
-}
-
-header ul {
-    list-style-type: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: max-content max-content max-content auto;
-}
-
-header ul li {
-    padding: 1em;
-}
-
 header ul li:nth-child(2) {
-    border-bottom: 5px solid lightskyblue;
-}
-
-header li:last-child {
-    outline: none;
-    display: block;
-    margin-left: auto;
-}
-
-header a {
-    text-decoration: none;
-    color: inherit;
-}
-
-main {
-    width: 100rem;
-    margin: auto;
-    display: grid;
-    gap: 2em;
-}
-
-.panel {
-    background-color: var(--fg-color);
-    width: 100%;
-    padding: 2em;
-}
-
-h2 {
-    margin: 0;
-}
-
-.robot-info-placeholder {
-    height: 10rem;
-}
-
-.run-table {
-    width: 100%;
+    border-bottom: 5px solid var(--primary);
 }
 
 .connection-token-input {
@@ -83,44 +11,10 @@ h2 {
     outline: none;
 }
 
-.green-button {
-    background-color: lightgreen;
-}
-
-.add-robot-button {
-    font-size: 1rem;
-    padding: 1em;
-    border: none;
-}
-
-.hidden {
-    display: none;
-}
-
-.start-button {
-    display: inline;
-}
-
-.status {
-    display: inline;
-}
-
 .grid-1col-gap {
     display: grid;
     grid-template-columns: auto;
     grid-gap: 1em;
-}
-
-.gray-status {
-    color: gray;
-}
-
-.red-status {
-    color: lightcoral;
-}
-
-.green-status {
-    color: lightgreen;
 }
 
 .status-message {
@@ -130,10 +24,6 @@ h2 {
 .generate-new-token {
     display: block;
     margin-top: 1em;
-}
-
-.relative {
-    position: relative;
 }
 
 .delete-robot {

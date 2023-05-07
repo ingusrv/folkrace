@@ -1,89 +1,9 @@
-*,
-*::before,
-*::after {
-    box-sizing: border-box;
-}
-
-body {
-    --bg-color: #404040;
-    --fg-color: white;
-    --text-color: black;
-
-    background-color: var(--bg-color);
-    color: var(--text-color);
-    margin: 0;
-    padding: 0;
-    font-family: "noto sans";
-    position: relative;
-}
-
-header {
-    background-color: var(--fg-color);
-    margin-bottom: 4em;
-    font-size: 1.25rem;
-}
-
-header ul {
-    list-style-type: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: max-content max-content max-content auto;
-}
-
-header ul li {
-    padding: 1em;
-}
-
 header ul li:nth-child(3) {
-    border-bottom: 5px solid lightskyblue;
-}
-
-header li:last-child {
-    outline: none;
-    display: block;
-    margin-left: auto;
-}
-
-header a {
-    text-decoration: none;
-    color: inherit;
+    border-bottom: 5px solid var(--primary);
 }
 
 main {
-    width: 100rem;
-    margin: auto;
-    display: grid;
     place-items: center;
-    gap: 2em;
-}
-
-.user-controls {
-    width: 100%;
-}
-
-.user-controls button {
-    padding: 1em;
-    font-size: 1rem;
-    border: none;
-}
-
-.green-button {
-    background-color: lightgreen;
-}
-
-.red-button {
-    background-color: lightcoral;
-}
-
-.panel {
-    background-color: var(--fg-color);
-    width: 100%;
-    padding: 2em;
-}
-
-.user-table {
-    width: 100%;
 }
 
 .addUserPrompt {
@@ -113,32 +33,10 @@ main {
     margin-bottom: 2rem;
 }
 
-.checkbox {
-    display: inline;
-}
-
 .form-container input[type=checkbox] {
     display: inline;
     width: 1.25rem;
     height: 1.25rem;
-}
-
-.hidden {
-    visibility: hidden;
-}
-
-.cancel-button {
-    padding: 1em;
-    font-size: 1rem;
-    border: none;
-    width: 100%;
-}
-
-.confirm-button {
-    padding: 1em;
-    font-size: 1rem;
-    border: none;
-    width: 100%;
 }
 
 .dim-background {
@@ -150,10 +48,6 @@ main {
     z-index: 5;
 }
 
-.border-none {
-    border: none;
-}
-
 .removeUserPrompt {
     position: absolute;
     height: 100vh;
@@ -163,6 +57,6 @@ main {
     overflow: hidden;
 }
 
-.removeUserPrompt .confirm-button {
-    margin-bottom: 2rem;
+.removeUserPrompt button:last-child {
+    margin-top: 2rem;
 }

@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../shared.css">
+    <link rel="stylesheet" href="../header.css">
     <link rel="stylesheet" type="text/css" href="users.css">
     <script src="users.js" defer></script>
     <script src="../username.js" defer></script>
@@ -24,12 +26,12 @@
 
     <main>
         <div id="status-message"></div>
-        <div class="user-controls">
-            <button class="green-button" id="add-user">Pievienot</button>
-            <button class="red-button" id="remove-user">Noņemt</button>
+        <div class="width-full">
+            <button class="button-big bg-green" id="add-user">Pievienot</button>
+            <button class="button-big bg-red" id="remove-user">Noņemt</button>
         </div>
         <div class="panel">
-            <table class="user-table" id="user-table">
+            <table class="width-full" id="user-table">
                 <tr>
                     <td></td>
                     <td>Nr.</td>
@@ -58,18 +60,18 @@
                     <input type="text" name="username" id="username">
                     <label for="password">Parole</label>
                     <input type="password" name="password" id="password">
-                    <label for="isAdmin" class="checkbox">Administrators</label>
+                    <label for="isAdmin" class="inline">Administrators</label>
                     <input type="checkbox" name="isAdmin" id="isAdmin">
-                    <input class="green-button border-none" type="submit" value="Pievienot">
+                    <input class="button-big bg-green" type="submit" value="Pievienot">
                 </form>
-                <button class="cancel-button red-button" id="cancel-add-user">Atcelt</button>
+                <button class="button-big width-full bg-red" id="cancel-add-user">Atcelt</button>
             </div>
         </div>
         <div class="removeUserPrompt hidden" id="remove-user-prompt">
             <div class="form-container" id="remove-user-form">
                 <p>Vai tiešām vēlaties izdzēst?</p>
-                <button class="confirm-button green-button" id="confirm-remove-user">Izdzēst</button>
-                <button class="cancel-button red-button" id="cancel-remove-user">Atcelt</button>
+                <button class="button-big width-full bg-green" id="confirm-remove-user">Izdzēst</button>
+                <button class="button-big width-full bg-red" id="cancel-remove-user">Atcelt</button>
             </div>
         </div>
     </main>
