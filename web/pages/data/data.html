@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="../shared.css">
     <link rel="stylesheet" href="../header.css">
     <link rel="stylesheet" type="text/css" href="data.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
     <script src="data.js" defer></script>
     <script src="../username.js" defer></script>
     <title>Braucienu dati</title>
@@ -27,6 +28,18 @@
     </header>
 
     <main>
+        <dialog id="chart-dialog">
+            <div class="chart-container">
+                <canvas id="compare-chart"></canvas>
+            </div>
+            <form method="dialog" id="close-dialog">
+                <button>OK</button>
+            </form>
+        </dialog>
+
+        <div class="width-full">
+            <button class="button primary compare-data" id="compare-data">salīdzināt</button>
+        </div>
         <div class="panel">
             <table class="data-table width-full" id="run-table">
                 <tr>

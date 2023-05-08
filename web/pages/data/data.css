@@ -13,3 +13,7 @@ header ul li:nth-child(1) {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+.chart-container {
+    width: 50rem;
+}
