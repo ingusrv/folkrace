@@ -6,3 +6,10 @@ header ul li:nth-child(1) {
 .data-table th {
     text-align: left;
 }
+
+.short-data {
+    display: inline-block;
+    width: 66px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
