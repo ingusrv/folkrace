@@ -5,20 +5,44 @@
 }
 
 body {
-    --bg-color: #404040;
-    --fg-color: white;
-    --primary: lightskyblue;
-    --text-color: black;
+    --background: #1a1c1e;
+    --foreground: rgba(146, 204, 255, 0.05);
+    --on-background: #e2e2e5;
+    --primary: #92ccff;
+    --on-primary: #003351;
+    --primary-container: #004b73;
+    --on-primary-container: #cce5ff;
+    --secondary: #b8c8da;
+    --on-secondary: #23323f;
+    --secondary-container: #394857;
+    --on-secondary-container: #d4e4f6;
+    --tertiary: #d1bfe7;
+    --on-tertiary: #372a4a;
+    --tertiary-container: #4e4162;
+    --on-tertiary-container: #eddcff;
+    --error: #ffb4ab;
+    --on-error: #690005;
+    --error-container: #93000a;
+    --on-error-container: #ffdad6;
+    --success: #abffb3;
+    --on-success: #056900;
+    --success-container: #0a9300;
+    --on-success-container: #d6ffda;
+    --surface: #1a1c1e;
+    --on-surface: #e2e2e5;
+    --outline: #8c9198;
+    --surface-variant: #42474e;
+    --on-surface-variant: #c2c7ce;
 
-    background-color: var(--bg-color);
-    color: var(--text-color);
+    background-color: var(--background);
+    color: var(--on-background);
     margin: 0;
     padding: 0;
     font-family: "noto sans";
 }
 
 header {
-    background-color: var(--fg-color);
+    background-color: var(--foreground);
     margin-bottom: 4em;
     font-size: 1.25rem;
 }
@@ -31,9 +55,10 @@ main {
 }
 
 .panel {
-    background-color: var(--fg-color);
+    background-color: var(--foreground);
     width: 100%;
     padding: 2em;
+    border-radius: 12px;
 }
 
 .bg-green {
@@ -76,8 +101,41 @@ main {
     width: 100%;
 }
 
+.button {
+    border: none;
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 410;
+}
+
+.primary {
+    background-color: var(--primary);
+    color: var(--on-primary);
+}
+
+.primary-container {
+    background-color: var(--primary-container);
+    color: var(--on-primary-container);
+}
+
 .button-big {
     font-size: 1rem;
     padding: 1em;
     border: none;
+}
+
+.checkbox {
+    width: 1rem;
+    height: 1rem;
+}
+
+.input {
+    color: var(--on-surface-variant);
+    border: 1px solid var(--outline);
+    border-radius: 6px;
+    background: none;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 0.5rem;
 }

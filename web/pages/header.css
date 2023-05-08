@@ -1,5 +1,5 @@
 header {
-    background-color: var(--fg-color);
+    background-color: var(--foreground);
     margin-bottom: 4em;
     font-size: 1.25rem;
 }
@@ -25,4 +25,14 @@ header li:last-child {
 header a {
     text-decoration: none;
     color: inherit;
+}
+
+.logout {
+    border: none;
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 410;
+    background-color: var(--error);
+    color: var(--on-error);
 }

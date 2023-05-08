@@ -19,18 +19,21 @@
             <li><a href="/data/">Braucienu dati</a></li>
             <li><a href="/robots/">Robotu saraksts</a></li>
             <li><a href="/users/">Lietotāji</a></li>
-            <li><span id="username-display">Lietotājvārds</span> <a href="/logout">Iziet</a></li>
+            <li>
+                <span id="username-display">Lietotājvārds</span>
+                <a class="logout" href="/logout">Iziet</a>
+            </li>
         </ul>
     </header>
 
     <main>
         <div class="panel">
-            <table class="width-full" id="run-table">
+            <table class="data-table width-full" id="run-table">
                 <tr>
-                    <td>Nr.</td>
-                    <td>Izveides datums</td>
-                    <td>Braukšanas laiks, s</td>
-                    <td>Dati</td>
+                    <th>Nr.</th>
+                    <th>Izveides datums</th>
+                    <th>Braukšanas laiks, s</th>
+                    <th>Dati</th>
                 </tr>
                 <!-- <tr>
                     <td>1.</td>

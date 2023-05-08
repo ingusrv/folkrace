@@ -1,9 +1,9 @@
 header ul li:nth-child(2) {
     border-bottom: 5px solid var(--primary);
+    border-radius: 5px;
 }
 
 .connection-token-input {
-    border: none;
     cursor: default;
 }
 
@@ -30,4 +30,11 @@ header ul li:nth-child(2) {
     position: absolute;
     right: 1rem;
     top: 1rem;
+    background-color: var(--error);
+    color: var(--on-error);
+}
+
+.add-robot {
+    background-color: var(--success);
+    color: var(--on-success);
 }

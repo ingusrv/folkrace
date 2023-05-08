@@ -1,3 +1,8 @@
 header ul li:nth-child(1) {
     border-bottom: 5px solid var(--primary);
+    border-radius: 5px;
+}
+
+.data-table th {
+    text-align: left;
 }

@@ -20,24 +20,27 @@
             <li><a href="/data/">Braucienu dati</a></li>
             <li><a href="/robots/">Robotu saraksts</a></li>
             <li><a href="/users/">Lietotāji</a></li>
-            <li><span id="username-display">Lietotājvārds</span> <a href="/logout">Iziet</a></li>
+            <li>
+                <span id="username-display">Lietotājvārds</span>
+                <a class="logout" href="/logout">Iziet</a>
+            </li>
         </ul>
     </header>
 
     <main>
         <div id="status-message"></div>
         <div class="width-full">
-            <button class="button-big bg-green" id="add-user">Pievienot</button>
-            <button class="button-big bg-red" id="remove-user">Noņemt</button>
+            <button class="button add-user" id="add-user">Pievienot</button>
+            <button class="button remove-user" id="remove-user">Noņemt</button>
         </div>
         <div class="panel">
-            <table class="width-full" id="user-table">
+            <table class="user-table width-full" id="user-table">
                 <tr>
-                    <td></td>
-                    <td>Nr.</td>
-                    <td>Lietotājvārds</td>
-                    <td>Administrators</td>
-                    <td>Izveides datums</td>
+                    <th></th>
+                    <th>Nr.</th>
+                    <th>Lietotājvārds</th>
+                    <th>Administrators</th>
+                    <th>Izveides datums</th>
                 </tr>
                 <!-- <tr>
                     <td>1.</td>
@@ -57,21 +60,21 @@
             <div class="form-container">
                 <form action="/api/v1/user" method="post" id="add-user-form">
                     <label for="username">Lietotājvārds</label>
-                    <input type="text" name="username" id="username">
+                    <input class="input" type="text" name="username" id="username">
                     <label for="password">Parole</label>
-                    <input type="password" name="password" id="password">
+                    <input class="input" type="password" name="password" id="password">
                     <label for="isAdmin" class="inline">Administrators</label>
                     <input type="checkbox" name="isAdmin" id="isAdmin">
-                    <input class="button-big bg-green" type="submit" value="Pievienot">
+                    <input class="button add-user width-full" type="submit" value="Pievienot">
                 </form>
-                <button class="button-big width-full bg-red" id="cancel-add-user">Atcelt</button>
+                <button class="button remove-user width-full" id="cancel-add-user">Atcelt</button>
             </div>
         </div>
         <div class="removeUserPrompt hidden" id="remove-user-prompt">
             <div class="form-container" id="remove-user-form">
                 <p>Vai tiešām vēlaties izdzēst?</p>
-                <button class="button-big width-full bg-green" id="confirm-remove-user">Izdzēst</button>
-                <button class="button-big width-full bg-red" id="cancel-remove-user">Atcelt</button>
+                <button class="button add-user width-full" id="confirm-remove-user">Izdzēst</button>
+                <button class="button remove-user width-full" id="cancel-remove-user">Atcelt</button>
             </div>
         </div>
     </main>

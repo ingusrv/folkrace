@@ -43,19 +43,19 @@ function createPanel(robotData) {
     div.innerHTML = `
     <div class="panel grid-1col-gap relative" data-robot-id="${robotData.robotId}">
         <h2 class="margin-0">Robots '${robotData.robotId}'</h2>
-        <button class="delete-robot" data-delete-robot>Izdzēst</button>
+        <button class="button delete-robot" data-delete-robot>Izdzēst</button>
         <div class="connection-token" data-connection-token>
-            <button class="show-connection-token" data-show-connection-token>Parādīt savienošanās atslēgu</button>
-            <input class="connection-token-input" type="password" name="token" value="${robotData.key}" readonly>
-            <button class="generate-new-token" data-generate-new-token>Izveidot jaunu savienošanās atslēgu</button>
+            <button class="button primary show-connection-token" data-show-connection-token>Parādīt savienošanās atslēgu</button>
+            <input class="input connection-token-input" type="password" name="token" value="${robotData.key}" readonly>
+            <button class="button primary generate-new-token" data-generate-new-token>Izveidot jaunu savienošanās atslēgu</button>
         </div>
         <div class="server-controls" data-server-controls>
-            <button class="inline" data-connect-to-server>Savienoties</button>
+            <button class="button primary inline" data-connect-to-server>Savienoties</button>
             <p class="inline">Savienojuma statuss: <span class="text-red" data-server-status>Nav Savienots</span>
             </p>
         </div>
         <div class="robot-controls hidden" data-robot-controls>
-            <button class="inline" data-start-robot>Sākt robota
+            <button class="button primary inline" data-start-robot>Sākt robota
                 programmu</button>
             <p class="inline">Robota statuss: <span class="text-gray" data-robot-status>Bezsaistē</span></p>
         </div>
