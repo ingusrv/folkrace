@@ -1,7 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import favicon from "serve-favicon";
-import expressWs from "express-ws";
+import { WebSocketServer } from "ws";
 import path from "path";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
@@ -10,7 +10,6 @@ import { MongoClient } from "mongodb";
 import { getUser, getUsers, addUser, getDriveData, addDriveData, removeUser, getRobots, addRobot, removeRobot, updateRobotKey } from "./db.js";
 
 const app = express();
-expressWs(app);
 const uri = "mongodb://127.0.0.1:27017";
 const client = new MongoClient(uri);
 const port = 3000;
@@ -301,11 +300,12 @@ app.post(`${api}/robotToken/:robotId`, async (req, res) => {
     res.status(200).json({ message: "jauna savienošanās atslēga izveidota" });
 });
 
-// app.websocket("/api/v1/robot/:id") {}
-app.ws(`${api}/panel`, (ws, req) => {
+const robotPanelWss = new WebSocketServer({ noServer: true, path: `${api}/panel` });
+robotPanelWss.on("connection", (ws) => {
     ws.on("close", (e) => {
         console.log(`client connection stopped with code ${e}`);
     });
+
     ws.on("message", (e) => {
         const data = JSON.parse(e);
         console.log(data);
@@ -324,4 +324,12 @@ app.ws(`${api}/panel`, (ws, req) => {
     });
 });
 
-app.listen(port, () => console.log(`server started at http://localhost:${port}`));
+const server = app.listen(port, () => console.log(`server started at http://localhost:${port}`));
+
+// handle websocket upgrade
+server.on("upgrade", (req, socket, head) => {
+    console.log("upgrading request");
+    robotPanelWss.handleUpgrade(req, socket, head, (ws) => {
+        robotPanelWss.emit("connection", ws, req);
+    });
+});
