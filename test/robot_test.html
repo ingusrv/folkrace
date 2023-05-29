@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot test</title>
+    <style>
+        body {
+            background-color: #212121;
+            color: #ffffff;
+            font-size: 1.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Robot test</h1>
+
+    <label for="key">Savienošanās atslēga</label>
+    <input id="key" type="text">
+
+    <button id="connect">Savienoties</button>
+    <button id="disconnect">Atvienoties</button>
+
+    <p id="robotId"></p>
+    <p id="status"></p>
+
+    <script>
+        const connectButton = document.querySelector("#connect");
+        const disconnectButton = document.querySelector("#disconnect");
+        const robotIdEl = document.querySelector("#robotId");
+        const statusEl = document.querySelector("#status");
+        const keyEl = document.querySelector("#key");
+        const key = keyEl.value;
+
+        connectButton.addEventListener("click", () => {
+            let ws = new WebSocket("ws://localhost:3000/api/v1/robot");
+
+            ws.addEventListener("open", (e) => {
+                console.log("savienojums atvērts");
+                ws.send(JSON.stringify({ type: "connect", key: key }));
+            });
+
+            ws.addEventListener("message", (e) => {
+                const data = JSON.parse(e.data);
+                console.log("saņēmām", data);
+                statusEl.innerText = `saņēmām: ${JSON.stringify(data)}`;
+
+                switch (data.type) {
+                    case "connect":
+                        robotIdEl.innerText = `Robota id: ${data.robotId}`;
+                        break;
+                    case "start":
+                        ws.send(JSON.stringify({ code: 200, type: "start", key: key, message: "Programma startēta" }));
+                        break;
+                    case "stop":
+                        ws.send(JSON.stringify({ code: 200, type: "stop", key: key, message: "Programma apstādināta" }));
+                        break;
+                    default:
+                        console.log("nezinam tādu ziņas tipu")
+                        break;
+                }
+            });
+
+            ws.addEventListener("close", (e) => {
+                console.log("savienojums aizvērts");
+                statusEl.innerText = "savienojums aizvērts";
+            });
+
+            disconnectButton.addEventListener("click", () => {
+                ws.close();
+            });
+        });
+    </script>
+</body>
+
+</html>
