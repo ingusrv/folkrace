@@ -151,7 +151,7 @@ function setupPanels() {
             ws.addEventListener("message", (e) => {
                 const data = JSON.parse(e.data);
                 console.log(data);
-                if (data.code === 200 && data.type === "connect") {
+                if (data.code === 200 && data.type === "connect" && data.origin === "server") {
                     serverStatus.classList.remove("text-red");
                     serverStatus.classList.add("text-green");
                     serverStatus.innerText = data.message;
@@ -169,14 +169,21 @@ function setupPanels() {
                     });
                     return;
                 }
-                if (data.code === 200 && data.type === "started") {
+                if (data.code === 200 && data.type === "connect" && data.origin === "robot") {
                     robotStatus.classList.remove("text-gray");
                     robotStatus.classList.remove("text-red");
                     robotStatus.classList.add("text-green");
                     robotStatus.innerText = data.message;
                     return;
                 }
-                if (data.code === 200 && data.type === "stopped") {
+                if (data.code === 200 && data.type === "start") {
+                    robotStatus.classList.remove("text-gray");
+                    robotStatus.classList.remove("text-red");
+                    robotStatus.classList.add("text-green");
+                    robotStatus.innerText = data.message;
+                    return;
+                }
+                if (data.code === 200 && data.type === "stop") {
                     robotStatus.classList.remove("text-gray");
                     robotStatus.classList.remove("text-green");
                     robotStatus.classList.add("text-red");

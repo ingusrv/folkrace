@@ -1,5 +1,6 @@
 import express from "express";
 import cookieParser from "cookie-parser";
+import { parse } from "url";
 import favicon from "serve-favicon";
 import { WebSocketServer } from "ws";
 import path from "path";
@@ -7,7 +8,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { MongoClient } from "mongodb";
-import { getUser, getUsers, addUser, getDriveData, addDriveData, removeUser, getRobots, addRobot, removeRobot, updateRobotKey } from "./db.js";
+import { getUser, getUsers, addUser, getDriveData, addDriveData, removeUser, getRobots, addRobot, removeRobot, updateRobotKey, getRobotByKey, getRobotById, updateRobotStatus } from "./db.js";
 
 const app = express();
 const uri = "mongodb://127.0.0.1:27017";
@@ -300,26 +301,134 @@ app.post(`${api}/robotToken/:robotId`, async (req, res) => {
     res.status(200).json({ message: "jauna savienošanās atslēga izveidota" });
 });
 
-const robotPanelWss = new WebSocketServer({ noServer: true, path: `${api}/panel` });
+const connectedClients = {};
+const robotPanelWss = new WebSocketServer({ noServer: true });
 robotPanelWss.on("connection", (ws) => {
     ws.on("close", (e) => {
         console.log(`client connection stopped with code ${e}`);
     });
 
-    ws.on("message", (e) => {
+    ws.on("message", async (e) => {
         const data = JSON.parse(e);
         console.log(data);
-        // TODO: check if robotId exists
-        if (data.type === "connect") {
-            ws.send(JSON.stringify({ code: 200, type: "connect", message: "Savienots" }));
+
+        if (!data.robotId || !data.type) {
+            ws.send(JSON.stringify({ code: 400, type: "error", message: "Notika kļūda" }));
+            return;
         }
-        if (data.type === "start") {
-            // start robot
-            ws.send(JSON.stringify({ code: 200, type: "started", message: "Sākta programmas izpilde" }));
+
+        const robot = await getRobotById(client, data.robotId);
+
+        if (!robot) {
+            ws.send(JSON.stringify({ code: 404, type: "error", message: `Robots "${data.robotId}" netika atrasts` }));
+            return;
         }
-        if (data.type === "stop") {
-            // stop robot
-            ws.send(JSON.stringify({ code: 200, type: "stopped", message: "Apstādināta programmas izpilde" }));
+
+        const robotWs = connectedRobots[robot.robotId];
+
+        switch (data.type) {
+            case "connect":
+                ws.send(JSON.stringify({
+                    code: 200,
+                    origin: "server",
+                    type: "connect",
+                    robotId: robot.robotId,
+                    status: robot.status,
+                    lastUpdated: robot.lastUpdated,
+                    message: "Savienots"
+                }));
+
+                connectedClients[robot.robotId] = ws;
+                break;
+            case "start":
+                if (!robotWs) {
+                    ws.send(JSON.stringify({ code: 500, type: "error", message: `Robots "${robot.robotId}" nav savienots` }));
+                    return;
+                }
+
+                robotWs.send(JSON.stringify({
+                    type: "start",
+                    delay: data.delay
+                }));
+                break;
+            case "stop":
+                if (!robotWs) {
+                    ws.send(JSON.stringify({ code: 500, type: "error", message: `Robots "${robot.robotId}" nav savienots` }));
+                    return;
+                }
+
+                robotWs.send(JSON.stringify({
+                    type: "stop",
+                }));
+                break;
+            default:
+                ws.send(JSON.stringify({ code: 400, type: "error", message: "Nezināms ziņas tips" }));
+                break;
+        }
+    });
+});
+
+const connectedRobots = {};
+const robotControlWss = new WebSocketServer({ noServer: true });
+robotControlWss.on("connection", (ws) => {
+    ws.on("close", (e) => {
+        console.log(`robot: client connection stopped with code ${e}`);
+    });
+
+    ws.on("message", async (e) => {
+        const data = JSON.parse(e);
+        console.log("robot: ", data);
+
+        if (!data.key || !data.type) {
+            ws.send(JSON.stringify({ code: 400, type: "error", message: "Notika kļūda" }));
+            return;
+        }
+
+        const robot = await getRobotByKey(client, data.key);
+
+        if (!robot) {
+            ws.send(JSON.stringify({ code: 404, type: "error", message: "Robots ar tādu atslēgu netika atrasts" }));
+            return;
+        }
+
+        const clientWs = connectedClients[robot.robotId];
+
+        switch (data.type) {
+            case "connect":
+                console.log(robot);
+                connectedRobots[robot.robotId] = ws;
+                ws.send(JSON.stringify({ code: 200, type: "connect", robotId: `${robot.robotId}`, message: "Robots savienots" }))
+                updateRobotStatus(client, robot.robotId, "Savienots");
+
+                if (clientWs) {
+                    console.log("connect: we have client");
+                    clientWs.send(JSON.stringify({ code: 200, origin: "robot", type: "connect", message: "Robots savienots" }));
+                }
+
+                break;
+            case "start":
+                console.log("we have received start");
+                updateRobotStatus(client, robot.robotId, "Programma startēta");
+
+                if (clientWs) {
+                    console.log("start: we have client");
+                    clientWs.send(JSON.stringify({ code: 200, type: "start", message: "Programma startēta" }));
+                }
+
+                break;
+            case "stop":
+                console.log("we have received stop");
+                updateRobotStatus(client, robot.robotId, "Programma apstādināta");
+
+                if (clientWs) {
+                    console.log("stop: we have client");
+                    clientWs.send(JSON.stringify({ code: 200, type: "stop", message: "Programma apstādināta" }));
+                }
+
+                break;
+            default:
+                ws.send(JSON.stringify({ code: 400, type: "error", message: "Nezināms ziņas tips" }));
+                break;
         }
     });
 });
@@ -328,8 +437,18 @@ const server = app.listen(port, () => console.log(`server started at http://loca
 
 // handle websocket upgrade
 server.on("upgrade", (req, socket, head) => {
-    console.log("upgrading request");
-    robotPanelWss.handleUpgrade(req, socket, head, (ws) => {
-        robotPanelWss.emit("connection", ws, req);
-    });
+    const { pathname } = parse(req.url);
+
+    if (pathname === `${api}/panel`) {
+        // TODO: auth
+        robotPanelWss.handleUpgrade(req, socket, head, (ws) => {
+            robotPanelWss.emit("connection", ws, req);
+        });
+    } else if (pathname === `${api}/robot`) {
+        robotControlWss.handleUpgrade(req, socket, head, (ws) => {
+            robotControlWss.emit("connection", ws, req);
+        });
+    } else {
+        socket.destroy();
+    }
 });

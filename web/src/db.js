@@ -78,15 +78,22 @@ export async function addRobot(client, robot) {
     return res.insertedId;
 }
 
-export async function getRobot(client, robotId) {
-    const cursor = client.db("folkrace").collection("robots").find({ robotId: robotId });
-    if (res) {
-        console.log(`robot ${robotId} found`);
-        return res;
-    } else {
-        console.log(`robot ${robotId} not found`);
+export async function getRobotById(client, robotId) {
+    const res = client.db("folkrace").collection("robots").findOne({ robotId: robotId });
+    if (!res) {
         return undefined;
     }
+
+    return res;
+}
+
+export async function getRobotByKey(client, key) {
+    const res = client.db("folkrace").collection("robots").findOne({ key: key });
+    if (!res) {
+        return undefined;
+    }
+
+    return res;
 }
 
 export async function removeRobot(client, robotId) {
@@ -96,6 +103,11 @@ export async function removeRobot(client, robotId) {
 
 export async function updateRobotKey(client, robotId, key) {
     const res = await client.db("folkrace").collection("robots").updateOne({ robotId: robotId }, { $set: { key: key } });
+    return res.modifiedCount;
+}
+
+export async function updateRobotStatus(client, robotId, status) {
+    const res = await client.db("folkrace").collection("robots").updateOne({ robotId: robotId }, { $set: { status: status, lastUpdated: new Date().toLocaleString("lv") } });
     return res.modifiedCount;
 }
 
