@@ -55,8 +55,11 @@ function createPanel(robotData) {
             </p>
         </div>
         <div class="robot-controls hidden" data-robot-controls>
-            <button class="button primary inline" data-start-robot>Sākt robota
-                programmu</button>
+            <div>
+                <label for="start-delay">Starta delay (sekundēs):</label>
+                <input class="input start-delay" type="number" name="start-delay" value="0" data-start-delay>
+            </div>
+            <button class="button primary inline" data-start-robot>Sākt robota programmu</button>
             <p class="inline">Robota statuss: <span class="text-gray" data-robot-status>Bezsaistē</span></p>
         </div>
     </div>
@@ -131,6 +134,7 @@ function setupPanels() {
         const robotControls = root.parentElement.querySelector("[data-robot-controls]");
         const startRobot = robotControls.querySelector("[data-start-robot]");
         const robotStatus = robotControls.querySelector("[data-robot-status]");
+        const delayInput = robotControls.querySelector("[data-start-delay]");
         connectToServer.addEventListener("click", (e) => {
             if (connectToServer.innerText === "Atvienoties") {
                 console.log(openSockets[robotId]);
@@ -163,7 +167,7 @@ function setupPanels() {
                             programStarted = false;
                         } else {
                             programStarted = true;
-                            ws.send(JSON.stringify({ robotId: robotId, type: "start" }));
+                            ws.send(JSON.stringify({ robotId: robotId, delay: Number(delayInput.value), type: "start" }));
                             startRobot.innerText = "Beigt robota programmu";
                         }
                     });

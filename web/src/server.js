@@ -346,6 +346,10 @@ robotPanelWss.on("connection", (ws) => {
                     return;
                 }
 
+                if (!data.delay) {
+                    data.delay = 0;
+                }
+
                 robotWs.send(JSON.stringify({
                     type: "start",
                     delay: data.delay

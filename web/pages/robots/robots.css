@@ -38,3 +38,8 @@ header ul li:nth-child(2) {
     background-color: var(--success);
     color: var(--on-success);
 }
+
+.start-delay {
+    width: 4.2rem;
+    margin-bottom: 1em;
+}
