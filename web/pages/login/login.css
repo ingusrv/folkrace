@@ -8,7 +8,8 @@ body {
 
 .login-container {
     background-color: var(--foreground);
-    width: 25rem;
+    width: 21%;
+    min-width: fit-content;
     padding: 1em;
     font-size: 1.5rem;
 }
