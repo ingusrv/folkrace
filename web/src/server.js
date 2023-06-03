@@ -12,14 +12,14 @@ import { getUser, getUsers, addUser, getDriveData, addDriveData, removeUser, get
 
 const app = express();
 const uri = "mongodb://127.0.0.1:27017";
-const client = new MongoClient(uri);
+const mongoClient = new MongoClient(uri);
 const port = 3000;
 const api = "/api/v1";
 const __dirname = path.resolve();
 const privateKey = "thisIsMySecurePrivateKey";
 const saltRounds = 10;
 
-await client.connect();
+await mongoClient.connect();
 
 app.use(express.json());
 app.use(cookieParser());
@@ -27,7 +27,7 @@ app.use(express.static(path.join(__dirname, "pages")));
 app.use(favicon(path.join(__dirname, "pages/favicon.ico")));
 
 // check if root/default account exists
-const admin = await getUser(client, "admin");
+const admin = await getUser(mongoClient, "admin");
 if (!admin) {
     console.log("No default account found, creating new");
     const admin = {
@@ -37,7 +37,7 @@ if (!admin) {
         admin: true,
         createdAt: new Date().toLocaleString()
     };
-    await addUser(client, admin);
+    await addUser(mongoClient, admin);
 }
 
 // auth
@@ -80,7 +80,7 @@ app.post("/login/", async (req, res) => {
         password: req.body.password
     };
 
-    const userFromDb = await getUser(client, user.username);
+    const userFromDb = await getUser(mongoClient, user.username);
     if (!userFromDb) {
         res.status(400).json({ message: "nepareizs lietotājvārds!" });
         return;
@@ -126,7 +126,7 @@ app.get("/logout", (req, res) => {
 
 // api
 app.get(`${api}/driveData`, async (req, res) => {
-    const data = await getDriveData(client);
+    const data = await getDriveData(mongoClient);
     res.status(200).json({ data: data });
 });
 
@@ -140,7 +140,7 @@ app.post(`${api}/driveData`, async (req, res) => {
 
     data.createdAt = new Date().toLocaleString();
     console.log(data);
-    const result = await addDriveData(client, data);
+    const result = await addDriveData(mongoClient, data);
 
     if (!result) {
         res.status(500).json({ message: "radās kļūda!" });
@@ -151,7 +151,7 @@ app.post(`${api}/driveData`, async (req, res) => {
 });
 
 app.get(`${api}/users`, async (req, res) => {
-    const data = await getUsers(client);
+    const data = await getUsers(mongoClient);
     data.forEach(item => {
         delete item.password;
         delete item.root;
@@ -177,13 +177,13 @@ app.post(`${api}/user`, async (req, res) => {
     }
 
     const currentUsername = jwt.verify(req.cookies.token, privateKey).user;
-    const currentUserFromDb = await getUser(client, currentUsername);
+    const currentUserFromDb = await getUser(mongoClient, currentUsername);
     if (currentUserFromDb.admin === false) {
         res.status(403).json({ message: "nevar izveidot kontu!" });
         return;
     }
 
-    const userFromDb = await getUser(client, user.username);
+    const userFromDb = await getUser(mongoClient, user.username);
     if (userFromDb) {
         res.status(400).json({ message: "lietotājvārds jau aizņemts!" });
         return;
@@ -201,7 +201,7 @@ app.post(`${api}/user`, async (req, res) => {
     user.password = hash;
 
     console.log(user);
-    const result = await addUser(client, user);
+    const result = await addUser(mongoClient, user);
 
     if (!result) {
         res.status(500).json({ message: "radās kļūda!" });
@@ -224,26 +224,26 @@ app.delete(`${api}/user/:username`, async (req, res) => {
         return;
     }
 
-    const userFromDb = await getUser(client, username);
+    const userFromDb = await getUser(mongoClient, username);
     if (!userFromDb) {
         res.status(404).json({ message: "lieotājs netika atrasts!" });
         return;
     }
 
     const currentUsername = jwt.verify(req.cookies.token, privateKey).user;
-    const currentUserFromDb = await getUser(client, currentUsername);
+    const currentUserFromDb = await getUser(mongoClient, currentUsername);
     if (userFromDb.admin === true && currentUserFromDb.admin === false) {
         res.status(403).json({ message: "nevar noņemt kontu!" });
         return;
     }
 
-    const result = await removeUser(client, username);
+    const result = await removeUser(mongoClient, username);
 
     res.status(200).json({ message: "lietotājs noņemts" });
 });
 
 app.get(`${api}/robots`, async (req, res) => {
-    const data = await getRobots(client);
+    const data = await getRobots(mongoClient);
     res.status(200).json({ data: data });
 });
 
@@ -257,7 +257,7 @@ app.post(`${api}/robot`, async (req, res) => {
         createdAt: new Date().toLocaleString()
     };
 
-    const result = await addRobot(client, robot);
+    const result = await addRobot(mongoClient, robot);
 
     if (!result) {
         res.status(500).json({ message: "radās kļūda!" });
@@ -275,7 +275,7 @@ app.delete(`${api}/robot/:robotId`, async (req, res) => {
         return;
     }
 
-    const result = await removeRobot(client, robotId);
+    const result = await removeRobot(mongoClient, robotId);
     if (result === 0) {
         res.status(404).json({ message: "robots netika atrasts!" });
         return;
@@ -292,7 +292,7 @@ app.post(`${api}/robotToken/:robotId`, async (req, res) => {
         return;
     }
 
-    const result = await updateRobotKey(client, robotId, crypto.randomBytes(8).toString('hex'));
+    const result = await updateRobotKey(mongoClient, robotId, crypto.randomBytes(8).toString('hex'));
     if (result === 0) {
         res.status(404).json({ message: "robots netika atrasts!" });
         return;
@@ -317,7 +317,7 @@ robotPanelWss.on("connection", (ws) => {
             return;
         }
 
-        const robot = await getRobotById(client, data.robotId);
+        const robot = await getRobotById(mongoClient, data.robotId);
 
         if (!robot) {
             ws.send(JSON.stringify({ code: 404, type: "error", message: `Robots "${data.robotId}" netika atrasts` }));
@@ -412,7 +412,7 @@ robotControlWss.on("connection", (ws) => {
             return;
         }
 
-        const robot = await getRobotByKey(client, data.key);
+        const robot = await getRobotByKey(mongoClient, data.key);
 
         if (!robot) {
             ws.send(JSON.stringify({ code: 404, type: "error", message: "Robots ar tādu atslēgu netika atrasts" }));
@@ -420,10 +420,10 @@ robotControlWss.on("connection", (ws) => {
         }
 
         // ja nav klienta, tad izveidojam fake klientu lai viss tālāk strādātu
-        const client_tmp = connectedClients[robot.robotId];
+        const client = connectedClients[robot.robotId];
         let clientWs = { send: () => { } };
-        if (client_tmp) {
-            clientWs = client_tmp.websocket;
+        if (client) {
+            clientWs = client.websocket;
         }
 
         switch (data.type) {
@@ -487,7 +487,7 @@ robotControlWss.on("connection", (ws) => {
                     result.data = [];
                 }
 
-                addDriveData(client, result).then((res) => {
+                addDriveData(mongoClient, result).then((res) => {
                     if (!res) {
                         console.log("Robota dati netika veiksmīgi saglabāti");
                         return;
