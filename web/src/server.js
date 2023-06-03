@@ -8,7 +8,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { MongoClient } from "mongodb";
-import { getUser, getUsers, addUser, getDriveData, addDriveData, removeUser, getRobots, addRobot, removeRobot, updateRobotKey, getRobotByKey, getRobotById, updateRobotStatus } from "./db.js";
+import { getUser, getUsers, addUser, getDriveData, addDriveData, removeUser, getRobots, addRobot, removeRobot, updateRobotKey, getRobotByKey, getRobotById } from "./db.js";
 
 const app = express();
 const uri = "mongodb://127.0.0.1:27017";
@@ -324,21 +324,31 @@ robotPanelWss.on("connection", (ws) => {
             return;
         }
 
-        const robotWs = connectedRobots[robot.robotId];
+        const robotClient = connectedRobots[robot.robotId];
+        let robotWs = undefined;
+        if (robotClient) {
+            robotWs = robotClient.websocket;
+        }
 
         switch (data.type) {
             case "connect":
+                connectedClients[robot.robotId] = {
+                    websocket: ws,
+                    connected: true
+                };
+
                 ws.send(JSON.stringify({
                     code: 200,
-                    origin: "server",
                     type: "connect",
                     robotId: robot.robotId,
-                    status: robot.status,
-                    lastUpdated: robot.lastUpdated,
                     message: "Savienots"
                 }));
 
-                connectedClients[robot.robotId] = ws;
+                let robotStatus = { code: 0, message: "Nav savienots" };
+                if (robotClient) {
+                    robotStatus = robotClient.status;
+                }
+                ws.send(JSON.stringify({ type: "status", robotId: robot.robotId, status: robotStatus }));
                 break;
             case "start":
                 if (!robotWs) {
@@ -377,6 +387,20 @@ const robotControlWss = new WebSocketServer({ noServer: true });
 robotControlWss.on("connection", (ws) => {
     ws.on("close", (e) => {
         console.log(`robot: client connection stopped with code ${e}`);
+        for (const key in connectedRobots) {
+            console.log(key);
+            const robot = connectedRobots[key];
+
+            if (robot.websocket.readyState === 3) {
+                robot.connected = false;
+                robot.status = { code: 0, message: "Nav savienots" };
+
+                const clientWs = connectedClients[key];
+                if (clientWs) {
+                    clientWs.websocket.send(JSON.stringify({ type: "status", robotId: key, status: robot.status }));
+                }
+            }
+        }
     });
 
     ws.on("message", async (e) => {
@@ -395,50 +419,43 @@ robotControlWss.on("connection", (ws) => {
             return;
         }
 
-        const clientWs = connectedClients[robot.robotId];
+        // ja nav klienta, tad izveidojam fake klientu lai viss tālāk strādātu
+        const client_tmp = connectedClients[robot.robotId];
+        let clientWs = { send: () => { } };
+        if (client_tmp) {
+            clientWs = client_tmp.websocket;
+        }
 
         switch (data.type) {
             case "connect":
                 console.log(robot);
-                connectedRobots[robot.robotId] = ws;
+                connectedRobots[robot.robotId] = {
+                    websocket: ws,
+                    connected: true,
+                    status: { code: 1, message: "Savienots" }
+                };
+
                 ws.send(JSON.stringify({ code: 200, type: "connect", robotId: `${robot.robotId}`, message: "Robots savienots" }))
-                updateRobotStatus(client, robot.robotId, "Savienots");
-
-                if (clientWs) {
-                    console.log("connect: we have client");
-                    clientWs.send(JSON.stringify({ code: 200, origin: "robot", type: "connect", message: "Robots savienots" }));
-                }
-
                 break;
             case "start":
                 console.log("we have received start");
-                updateRobotStatus(client, robot.robotId, "Programma startēta");
-
-                if (clientWs) {
-                    console.log("start: we have client");
-                    clientWs.send(JSON.stringify({ code: 200, type: "start", message: "Programma startēta" }));
-                }
-
+                connectedRobots[robot.robotId].status = { code: 1, message: "Programma startēta" };
                 break;
             case "stop":
                 console.log("we have received stop");
-                updateRobotStatus(client, robot.robotId, "Programma apstādināta");
-
-                if (clientWs) {
-                    console.log("stop: we have client");
-                    clientWs.send(JSON.stringify({ code: 200, type: "stop", message: "Programma apstādināta" }));
-                }
-
+                connectedRobots[robot.robotId].status = { code: 1, message: "Programma apstādināta" };
                 break;
             case "data":
                 console.log("robot data: ", data);
 
                 // paši svarīgākie dati kurus vienmēr vajag
                 if (!data.elapsedTime) {
-                    ws.send(JSON.stringify({ code: 500, type: "data", message: "Robota datos nav braukšanas laika" }));
+                    ws.send(JSON.stringify({ code: 400, type: "data", message: "Robota datos nav braukšanas laika" }));
+                    return;
                 }
                 if (!data.fps || data.fps.length === 0) {
-                    ws.send(JSON.stringify({ code: 500, type: "data", message: "Robota datos nav fps" }));
+                    ws.send(JSON.stringify({ code: 400, type: "data", message: "Robota datos nav fps" }));
+                    return;
                 }
 
                 // saglabājam datus
@@ -487,6 +504,12 @@ robotControlWss.on("connection", (ws) => {
                 ws.send(JSON.stringify({ code: 400, type: "error", message: "Nezināms ziņas tips" }));
                 break;
         }
+
+        clientWs.send(JSON.stringify({
+            type: "status",
+            robotId: robot.robotId,
+            status: connectedRobots[robot.robotId].status
+        }));
     });
 });
 

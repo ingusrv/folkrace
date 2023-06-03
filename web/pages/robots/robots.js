@@ -60,7 +60,7 @@ function createPanel(robotData) {
                 <input class="input start-delay" type="number" name="start-delay" value="0" data-start-delay>
             </div>
             <button class="button primary inline" data-start-robot>Sākt robota programmu</button>
-            <p class="inline">Robota statuss: <span class="text-gray" data-robot-status>Bezsaistē</span></p>
+            <p class="inline">Robota statuss: <span data-robot-status></span></p>
         </div>
     </div>
     `;
@@ -135,72 +135,96 @@ function setupPanels() {
         const startRobot = robotControls.querySelector("[data-start-robot]");
         const robotStatus = robotControls.querySelector("[data-robot-status]");
         const delayInput = robotControls.querySelector("[data-start-delay]");
+        let connectedToServer = false;
+
         connectToServer.addEventListener("click", (e) => {
-            if (connectToServer.innerText === "Atvienoties") {
-                console.log(openSockets[robotId]);
+            if (connectedToServer === true) {
+                console.log(`${robotId} socket atvienojas`);
                 openSockets[robotId].close(1000, String(robotId));
                 return;
             }
+
             console.log(robotId);
             const ws = new WebSocket(`ws://${window.location.host}/api/v1/panel`);
             let programStarted = false;
+
+            ws.addEventListener("open", (e) => {
+                ws.send(JSON.stringify({ type: "connect", robotId: robotId }));
+            });
+
             ws.addEventListener("close", (e) => {
                 console.log(e);
+
                 connectToServer.innerText = "Savienoties";
+                connectedToServer = false;
+
                 serverStatus.classList.remove("text-green");
                 serverStatus.classList.add("text-red");
                 serverStatus.innerText = "Nav savienots";
+
                 robotControls.classList.add("hidden");
             });
+
             ws.addEventListener("message", (e) => {
                 const data = JSON.parse(e.data);
                 console.log(data);
-                if (data.code === 200 && data.type === "connect" && data.origin === "server") {
-                    serverStatus.classList.remove("text-red");
-                    serverStatus.classList.add("text-green");
-                    serverStatus.innerText = data.message;
-                    robotControls.classList.remove("hidden");
-                    startRobot.addEventListener("click", (e) => {
-                        if (programStarted === true) {
-                            ws.send(JSON.stringify({ robotId: robotId, type: "stop" }));
-                            startRobot.innerText = "Sākt robota programmu";
-                            programStarted = false;
-                        } else {
-                            programStarted = true;
+
+                switch (data.type) {
+                    case "connect":
+                        openSockets[robotId] = ws;
+                        connectToServer.innerText = "Atvienoties";
+                        connectedToServer = true;
+
+                        serverStatus.classList.remove("text-red");
+                        serverStatus.classList.add("text-green");
+                        serverStatus.innerText = data.message;
+                        robotControls.classList.remove("hidden");
+
+                        startRobot.addEventListener("click", (e) => {
+                            if (programStarted === true) {
+                                ws.send(JSON.stringify({ robotId: robotId, type: "stop" }));
+
+                                startRobot.innerText = "Sākt robota programmu";
+                                programStarted = false;
+                                return;
+                            }
+
                             ws.send(JSON.stringify({ robotId: robotId, delay: Number(delayInput.value), type: "start" }));
                             startRobot.innerText = "Beigt robota programmu";
-                        }
-                    });
-                    return;
-                }
-                if (data.code === 200 && data.type === "connect" && data.origin === "robot") {
-                    robotStatus.classList.remove("text-gray");
-                    robotStatus.classList.remove("text-red");
-                    robotStatus.classList.add("text-green");
-                    robotStatus.innerText = data.message;
-                    return;
-                }
-                if (data.code === 200 && data.type === "start") {
-                    robotStatus.classList.remove("text-gray");
-                    robotStatus.classList.remove("text-red");
-                    robotStatus.classList.add("text-green");
-                    robotStatus.innerText = data.message;
-                    return;
-                }
-                if (data.code === 200 && data.type === "stop") {
-                    robotStatus.classList.remove("text-gray");
-                    robotStatus.classList.remove("text-green");
-                    robotStatus.classList.add("text-red");
-                    robotStatus.innerText = data.message;
-                    return;
-                }
-            });
-            ws.addEventListener("open", (e) => {
-                ws.send(JSON.stringify({ robotId: robotId, type: "connect" }));
-                connectToServer.innerText = "Atvienoties";
-                openSockets[robotId] = ws;
-            });
+                            programStarted = true;
+                        });
 
+                        break;
+                    case "status":
+                        console.log(robotStatus);
+                        switch (data.status.code) {
+                            case 0:
+                                if (programStarted) {
+                                    startRobot.innerText = "Sākt robota programmu";
+                                    programStarted = false;
+                                }
+
+                                robotStatus.classList.remove("text-green")
+                                robotStatus.classList.add("text-red");
+
+                                robotStatus.innerText = data.status.message;
+                                break;
+                            case 1:
+                                robotStatus.classList.remove("text-red");
+                                robotStatus.classList.add("text-green");
+
+                                robotStatus.innerText = data.status.message;
+                                break;
+                            default:
+                                console.log(`Nezināms statusa kods: ${data.status.code}`);
+                                break;
+                        }
+                        break;
+                    default:
+                        console.log(`Nezināms ziņas tips: ${data.type}`);
+                        break;
+                }
+            });
         });
     });
 }
