@@ -430,7 +430,60 @@ robotControlWss.on("connection", (ws) => {
                 }
 
                 break;
+            case "data":
+                console.log("robot data: ", data);
+
+                // paši svarīgākie dati kurus vienmēr vajag
+                if (!data.elapsedTime) {
+                    ws.send(JSON.stringify({ code: 500, type: "data", message: "Robota datos nav braukšanas laika" }));
+                }
+                if (!data.fps || data.fps.length === 0) {
+                    ws.send(JSON.stringify({ code: 500, type: "data", message: "Robota datos nav fps" }));
+                }
+
+                // saglabājam datus
+                const result = {};
+
+                result.algorithm = data.algorithm;
+                result.version = data.version;
+                result.data = data.data;
+                result.elapsedTime = data.elapsedTime.toFixed(2);
+                result.fps = data.fps;
+
+                const sum = data.fps.reduce((partialSum, a) => partialSum + a, 0);
+                result.averageFps = Number((sum / data.fps.length).toFixed(1));
+
+                result.robotId = robot.robotId;
+                result.owner = robot.owner;
+                result.sharedWith = [];
+                result.createdAt = new Date().toLocaleString("lv");
+                result.note = "";
+
+                // mazāk svarīgie dai, kur var būt "tukši"
+                if (!data.algorithm || data.algorithm === "") {
+                    result.algorithm = "n/a";
+                }
+                if (!data.version || data.version === "") {
+                    result.version = "n/a";
+                }
+                if (!data.data) {
+                    result.data = [];
+                }
+
+                addDriveData(client, result).then((res) => {
+                    if (!res) {
+                        console.log("Robota dati netika veiksmīgi saglabāti");
+                        return;
+                    }
+
+                    console.log("Robota dati veiksmīgi saglabāti");
+                });
+
+                ws.send(JSON.stringify({ code: 200, type: "data", message: "Robota dati saņemti" }));
+
+                break;
             default:
+                console.log("Nezināms ziņas tips: ", data.type);
                 ws.send(JSON.stringify({ code: 400, type: "error", message: "Nezināms ziņas tips" }));
                 break;
         }
