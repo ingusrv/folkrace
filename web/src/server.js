@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import cookieParser from "cookie-parser";
 import { parse } from "url";
@@ -11,14 +12,13 @@ import { MongoClient } from "mongodb";
 import { getUser, getUsers, addUser, getDriveData, addDriveData, removeUser, getRobots, addRobot, removeRobot, updateRobotKey, getRobotByKey, getRobotById } from "./db.js";
 
 const app = express();
-const uri = "mongodb://127.0.0.1:27017";
-const mongoClient = new MongoClient(uri);
-const port = 3000;
-const api = "/api/v1";
+const DATABASE_URI = process.env.DATABASE_URI;
+const PORT = process.env.ENVIRONMENT === "prod" ? process.env.PROD_PORT : process.env.DEV_PORT;
+const PRIVATE_KEY = process.env.PRIVATE_KEY;
+const SALT_ROUNDS = 12;
+const API_VERSION = "v1";
 const __dirname = path.resolve();
-const privateKey = "thisIsMySecurePrivateKey";
-const saltRounds = 10;
-
+const mongoClient = new MongoClient(DATABASE_URI);
 await mongoClient.connect();
 
 app.use(express.json());
@@ -27,17 +27,17 @@ app.use(express.static(path.join(__dirname, "pages")));
 app.use(favicon(path.join(__dirname, "pages/favicon.ico")));
 
 // check if root/default account exists
-const admin = await getUser(mongoClient, "admin");
+const admin = await getUser(mongoClient, process.env.ROOT_USERNAME);
 if (!admin) {
     console.log("No default account found, creating new");
-    const admin = {
-        username: "admin",
-        password: await bcrypt.hash("admin", saltRounds),
+    const adminUser = {
+        username: process.env.ROOT_USERNAME,
+        password: await bcrypt.hash(process.env.ROOT_PASSWORD, SALT_ROUNDS),
         root: true,
         admin: true,
-        createdAt: new Date().toLocaleString()
+        createdAt: new Date().toLocaleString("lv")
     };
-    await addUser(mongoClient, admin);
+    await addUser(mongoClient, adminUser);
 }
 
 // auth
@@ -46,7 +46,7 @@ app.use((req, res, next) => {
         next();
         return;
     }
-    if (req.path === `${api}/driveData` && req.method === "POST") {
+    if (req.path === `/api/${API_VERSION}/driveData` && req.method === "POST") {
         next()
         return;
     }
@@ -56,7 +56,7 @@ app.use((req, res, next) => {
     }
 
     try {
-        const decoded = jwt.verify(req.cookies.token, privateKey);
+        const decoded = jwt.verify(req.cookies.token, PRIVATE_KEY);
         console.log(decoded);
         next();
     } catch (err) {
@@ -99,7 +99,7 @@ app.post("/login/", async (req, res) => {
             return;
         }
 
-        const token = jwt.sign({ user: userFromDb.username }, privateKey, { expiresIn: "30m" });
+        const token = jwt.sign({ user: userFromDb.username }, PRIVATE_KEY, { expiresIn: "30m" });
         console.log(`setting new token for ${user.username}: ${token}`);
         // res.setHeader("Set-Cookie", `token=${token}`);
         res.status(200).cookie("token", token, { maxAge: new Date(Date.now() + 1800000), sameSite: "strict" }).json({ message: "success" });
@@ -125,12 +125,12 @@ app.get("/logout", (req, res) => {
 });
 
 // api
-app.get(`${api}/driveData`, async (req, res) => {
+app.get(`/api/${API_VERSION}/driveData`, async (req, res) => {
     const data = await getDriveData(mongoClient);
     res.status(200).json({ data: data });
 });
 
-app.post(`${api}/driveData`, async (req, res) => {
+app.post(`/api/${API_VERSION}/driveData`, async (req, res) => {
     const data = req.body;
 
     if (!data.elapsedTime || !data.data || data.data === []) {
@@ -150,7 +150,7 @@ app.post(`${api}/driveData`, async (req, res) => {
     res.status(201).json({ message: "dati pievienoti veiksmīgi!" });
 });
 
-app.get(`${api}/users`, async (req, res) => {
+app.get(`/api/${API_VERSION}/users`, async (req, res) => {
     const data = await getUsers(mongoClient);
     data.forEach(item => {
         delete item.password;
@@ -159,15 +159,15 @@ app.get(`${api}/users`, async (req, res) => {
     res.status(200).json({ data: data });
 });
 
-app.get(`${api}/user`, async (req, res) => {
+app.get(`/api/${API_VERSION}/user`, async (req, res) => {
     // const data = await getUsers(client);
     const data = {
-        username: jwt.verify(req.cookies.token, privateKey).user
+        username: jwt.verify(req.cookies.token, PRIVATE_KEY).user
     };
     res.status(200).json(data);
 });
 
-app.post(`${api}/user`, async (req, res) => {
+app.post(`/api/${API_VERSION}/user`, async (req, res) => {
     // TODO: check if user is admin
     const user = req.body;
 
@@ -176,7 +176,7 @@ app.post(`${api}/user`, async (req, res) => {
         return;
     }
 
-    const currentUsername = jwt.verify(req.cookies.token, privateKey).user;
+    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
     const currentUserFromDb = await getUser(mongoClient, currentUsername);
     if (currentUserFromDb.admin === false) {
         res.status(403).json({ message: "nevar izveidot kontu!" });
@@ -197,7 +197,7 @@ app.post(`${api}/user`, async (req, res) => {
 
     user.createdAt = new Date().toLocaleString();
 
-    const hash = await bcrypt.hash(user.password, saltRounds);
+    const hash = await bcrypt.hash(user.password, SALT_ROUNDS);
     user.password = hash;
 
     console.log(user);
@@ -211,7 +211,7 @@ app.post(`${api}/user`, async (req, res) => {
     res.status(201).json({ message: "lietotājs veiksmīgi izveidots!" });
 });
 
-app.delete(`${api}/user/:username`, async (req, res) => {
+app.delete(`/api/${API_VERSION}/user/:username`, async (req, res) => {
     const username = req.params.username;
     if (username === "") {
         res.status(400).json({ message: "netika norādīts lietotājvārds!" });
@@ -230,7 +230,7 @@ app.delete(`${api}/user/:username`, async (req, res) => {
         return;
     }
 
-    const currentUsername = jwt.verify(req.cookies.token, privateKey).user;
+    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
     const currentUserFromDb = await getUser(mongoClient, currentUsername);
     if (userFromDb.admin === true && currentUserFromDb.admin === false) {
         res.status(403).json({ message: "nevar noņemt kontu!" });
@@ -242,12 +242,12 @@ app.delete(`${api}/user/:username`, async (req, res) => {
     res.status(200).json({ message: "lietotājs noņemts" });
 });
 
-app.get(`${api}/robots`, async (req, res) => {
+app.get(`/api/${API_VERSION}/robots`, async (req, res) => {
     const data = await getRobots(mongoClient);
     res.status(200).json({ data: data });
 });
 
-app.post(`${api}/robot`, async (req, res) => {
+app.post(`/api/${API_VERSION}/robot`, async (req, res) => {
     // TODO: return inserted robot
     const robot = {
         robotId: crypto.randomBytes(2).toString('hex'),
@@ -267,7 +267,7 @@ app.post(`${api}/robot`, async (req, res) => {
     res.status(201).json({ message: "robots veiksmīgi izveidots!" });
 });
 
-app.delete(`${api}/robot/:robotId`, async (req, res) => {
+app.delete(`/api/${API_VERSION}/robot/:robotId`, async (req, res) => {
     const robotId = req.params.robotId;
 
     if (robotId === "") {
@@ -284,7 +284,7 @@ app.delete(`${api}/robot/:robotId`, async (req, res) => {
     res.status(200).json({ message: "robots izdzēsts!" });
 });
 
-app.post(`${api}/robotToken/:robotId`, async (req, res) => {
+app.post(`/api/${API_VERSION}/robotToken/:robotId`, async (req, res) => {
     const robotId = req.params.robotId;
 
     if (robotId === "") {
@@ -513,18 +513,18 @@ robotControlWss.on("connection", (ws) => {
     });
 });
 
-const server = app.listen(port, () => console.log(`server started at http://localhost:${port}`));
+const server = app.listen(PORT, () => console.log(`server started at http://localhost:${PORT}`));
 
 // handle websocket upgrade
 server.on("upgrade", (req, socket, head) => {
     const { pathname } = parse(req.url);
 
-    if (pathname === `${api}/panel`) {
+    if (pathname === `/api/${API_VERSION}/panel`) {
         // TODO: auth
         robotPanelWss.handleUpgrade(req, socket, head, (ws) => {
             robotPanelWss.emit("connection", ws, req);
         });
-    } else if (pathname === `${api}/robot`) {
+    } else if (pathname === `/api/${API_VERSION}/robot`) {
         robotControlWss.handleUpgrade(req, socket, head, (ws) => {
             robotControlWss.emit("connection", ws, req);
         });
