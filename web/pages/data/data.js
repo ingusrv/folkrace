@@ -16,7 +16,9 @@ fetch("/api/v1/driveData").then(async (res) => {
         data-note="${item.note}"
         data-elapsed-time="${item.elapsedTime}"
         data-average-fps="${item.averageFps}"
-        data-fps="${item.fps}">
+        data-fps="${item.fps}"
+        data-robot-id="${item.robotId}"
+        data-created-at="${item.createdAt}">
         </td>
         <td>${++i}</td>
         <td>${item.robotId}</td>
@@ -38,9 +40,10 @@ fetch("/api/v1/driveData").then(async (res) => {
 function loadCheckboxes(checkboxes) {
     checkboxes.forEach((checkbox) => {
         checkbox.addEventListener("click", (e) => {
-            const note = e.target.dataset.note;
-            const averageFps = e.target.dataset.averageFps;
-            const data = { note: note, averageFps: averageFps };
+            const data = {
+                note: `robots "${e.target.dataset.robotId}" @ ${e.target.dataset.createdAt}`,
+                averageFps: e.target.dataset.averageFps
+            };
             console.log(data);
 
             for (item of dataToCompare) {
