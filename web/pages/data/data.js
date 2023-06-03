@@ -11,14 +11,20 @@ fetch("/api/v1/driveData").then(async (res) => {
         // TODO: fix potential XSS
         // TODO: replace table with message if no data or error
         tr.innerHTML = `
-        <td><input class="select-data-checkbox" type="checkbox" name="select-data-checkbox" data-select-data-checkbox data-label="${item.label}" data-elapsed-time="${item.elapsedTime}" data-fps="${item.fps}"></td>
+        <td>
+        <input class="select-data-checkbox" type="checkbox" data-select-data-checkbox
+        data-note="${item.note}"
+        data-elapsed-time="${item.elapsedTime}"
+        data-average-fps="${item.averageFps}"
+        data-fps="${item.fps}">
+        </td>
         <td>${++i}</td>
         <td>${item.robotId}</td>
         <td>${item.createdAt}</td>
         <td>${item.algorithm}</td>
         <td>${item.version}</td>
-        <td>${item.label}</td>
-        <td>${item.fps}</td>
+        <td>${item.note}</td>
+        <td>${item.averageFps}</td>
         <td>${item.elapsedTime}</td>
         <td class="short-data">${item.data}</td>
         `;
@@ -32,13 +38,13 @@ fetch("/api/v1/driveData").then(async (res) => {
 function loadCheckboxes(checkboxes) {
     checkboxes.forEach((checkbox) => {
         checkbox.addEventListener("click", (e) => {
-            const label = e.target.dataset.label;
-            const fps = e.target.dataset.fps;
-            const data = { label: label, fps: fps };
+            const note = e.target.dataset.note;
+            const averageFps = e.target.dataset.averageFps;
+            const data = { note: note, averageFps: averageFps };
             console.log(data);
 
             for (item of dataToCompare) {
-                if (item.label == data.label && item.fps == data.fps) {
+                if (item.note == data.note && item.averageFps == data.averageFps) {
                     console.log("dati sakrīt");
                     const index = dataToCompare.indexOf(item);
                     console.log("index", index);
@@ -64,8 +70,8 @@ compareButton.addEventListener("click", (e) => {
     let labels = []
     let data = []
     for (item of dataToCompare) {
-        labels.push(item.label);
-        data.push(item.fps);
+        labels.push(item.note);
+        data.push(item.averageFps);
     }
 
     dialog.showModal();
