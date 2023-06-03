@@ -29,11 +29,19 @@
 
     <main>
         <dialog id="chart-dialog">
+            <h2 class="dialog-title">Datu salīdzinājums</h2>
             <div class="chart-container">
-                <canvas id="compare-chart"></canvas>
+                <canvas id="comparison-chart"></canvas>
             </div>
-            <form method="dialog" id="close-dialog">
-                <button>OK</button>
+            <form method="dialog" id="close-chart-dialog">
+                <button class="button primary">Aizvērt</button>
+            </form>
+        </dialog>
+        <dialog id="view-data-dialog">
+            <h2 class="dialog-title">No robota saņemtie dati</h2>
+            <div id="text-window" class="text-window"></div>
+            <form method="dialog" id="close-view-data-dialog">
+                <button class="button primary">Aizvērt</button>
             </form>
         </dialog>
 

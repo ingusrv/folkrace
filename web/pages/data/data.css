@@ -14,6 +14,36 @@ header ul li:nth-child(1) {
     text-overflow: ellipsis;
 }
 
+dialog {
+    background-color: var(--secondary-container);
+    color: var(--on-secondary-container);
+    border: none;
+    border-radius: 12px;
+    width: 50%;
+}
+
+dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.dialog-title {
+    margin-top: 0;
+    margin-bottom: 1rem;
+}
+
 .chart-container {
-    width: 50rem;
+    background-color: var(--background);
+    margin-bottom: 1rem;
+}
+
+.text-window {
+    background-color: var(--surface);
+    color: var(--on-surface);
+    width: 100%;
+    min-height: 25rem;
+    overflow-x: scroll;
+    overflow-y: scroll;
+    font-family: Helvetica;
+    margin-bottom: 1rem;
+    padding: 1em;
 }

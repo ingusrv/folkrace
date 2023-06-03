@@ -1,6 +1,3 @@
-let dataToCompare = [];
-let checkboxes = undefined;
-
 fetch("/api/v1/driveData").then(async (res) => {
     const table = document.querySelector("#run-table");
     const body = await res.json();
@@ -28,16 +25,21 @@ fetch("/api/v1/driveData").then(async (res) => {
         <td>${item.note}</td>
         <td>${item.averageFps}</td>
         <td>${item.elapsedTime}</td>
-        <td class="short-data">${item.data}</td>
+        <td>
+        <button class="button primary" data-show-data-button data-data="${item.data}">Skatīt</button>
+        </td>
         `;
         table.appendChild(tr);
     });
 
-    checkboxes = document.querySelectorAll("[data-select-data-checkbox]");
-    loadCheckboxes(checkboxes);
+    const selectDataCheckboxes = document.querySelectorAll("[data-select-data-checkbox]");
+    const showDataButtons = document.querySelectorAll("[data-show-data-button]");
+    setupDataCheckboxes(selectDataCheckboxes);
+    setupDataButtons(showDataButtons);
 });
 
-function loadCheckboxes(checkboxes) {
+let dataToCompare = [];
+function setupDataCheckboxes(checkboxes) {
     checkboxes.forEach((checkbox) => {
         checkbox.addEventListener("click", (e) => {
             const data = {
@@ -63,13 +65,24 @@ function loadCheckboxes(checkboxes) {
     });
 }
 
+function setupDataButtons(buttons) {
+    const dialog = document.querySelector("#view-data-dialog");
+    const textWindow = document.querySelector("#text-window");
+    const closeDialog = document.querySelector("#close-view-data-dialog");
+    buttons.forEach((button) => {
+        button.addEventListener("click", (e) => {
+            dialog.showModal();
+            textWindow.innerText = e.target.dataset.data;
+        });
+    });
+}
+
 const compareButton = document.querySelector("#compare-data");
-const dialog = document.querySelector("#chart-dialog");
-const ctx = document.getElementById('compare-chart');
-
-const closeDialog = document.querySelector("#close-dialog");
-
 compareButton.addEventListener("click", (e) => {
+    const dialog = document.querySelector("#chart-dialog");
+    const ctx = document.querySelector("#comparison-chart");
+    const closeDialog = document.querySelector("#close-chart-dialog");
+
     let labels = []
     let data = []
     for (item of dataToCompare) {
@@ -79,7 +92,9 @@ compareButton.addEventListener("click", (e) => {
 
     dialog.showModal();
 
-    let chart = new Chart(ctx, {
+    Chart.defaults.borderColor = "#8c9198";
+    Chart.defaults.color = "#e2e2e5";
+    const chart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: labels,
@@ -99,7 +114,6 @@ compareButton.addEventListener("click", (e) => {
     });
 
     closeDialog.addEventListener("submit", (e) => {
-        console.log("dialog closed");
         chart.destroy();
     })
 });
