@@ -1,3 +1,5 @@
+import Notification from "../notification.js";
+
 const form = document.querySelector("form");
 form.addEventListener("submit", (e) => {
     console.log("logging in...");
@@ -17,15 +19,12 @@ form.addEventListener("submit", (e) => {
     }).then(async (res) => {
         const body = await res.json();
         console.log(body);
-        const statusMessage = document.querySelector("#status-message");
-        if (res.status >= 400) {
-            statusMessage.style.color = "lightcoral";
-            statusMessage.innerText = body.message;
-        }
         if (res.status === 200) {
-            statusMessage.style.color = "lightgreen";
-            statusMessage.innerText = body.message;
+            new Notification({ type: "success", text: body.message });
             window.location.href = "/data/";
+            return;
         }
+
+        new Notification({ type: "error", text: body.message });
     });
 });
