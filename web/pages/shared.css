@@ -34,6 +34,21 @@ body {
     --surface-variant: #42474e;
     --on-surface-variant: #c2c7ce;
 
+    --info-text: #325d99;
+    --success-text: #0fb294;
+    --warning-text: #996813;
+    --danger-text: #c86e56;
+
+    --info-bg: #ddebff;
+    --success-bg: #d0f8f1;
+    --warning-bg: #ffefd2;
+    --danger-bg: #fee7e1;
+
+    --info-border: #bad7ff;
+    --success-border: #a1f2e3;
+    --warning-border: #ffdfa5;
+    --danger-border: #fdd0c4;
+
     background-color: var(--background);
     color: var(--on-background);
     margin: 0;
@@ -139,4 +154,82 @@ main {
     font-size: 1rem;
     font-weight: 500;
     padding: 0.5rem;
+}
+
+.notification-container {
+    width: 40%;
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.notification {
+    width: 100%;
+    position: relative;
+    margin-bottom: 0.5rem;
+    padding: 1rem 2rem;
+    border-radius: 12px;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 1.25rem;
+    animation: hide-notification 0.5s ease-in forwards;
+}
+
+.notification.can-close::after {
+    content: "\00D7";
+    position: absolute;
+    top: 50%;
+    transform: translateY(-54%);
+    right: 0.5rem;
+    font-size: 2rem;
+    cursor: pointer;
+}
+
+.notification-container .notification.show {
+    animation: show-notification 0.5s ease-out forwards;
+}
+
+@keyframes show-notification {
+    0% {
+        transform: translateY(-100vh);
+    }
+
+    100% {
+        transform: translateY(0);
+    }
+}
+
+@keyframes hide-notification {
+    0% {
+        transform: translateY(0);
+    }
+
+    100% {
+        transform: translateY(-100vh);
+    }
+}
+
+.info-notification {
+    background-color: var(--info-bg);
+    color: var(--info-text);
+    border: 1px solid var(--info-border);
+}
+
+.success-notification {
+    background-color: var(--success-bg);
+    color: var(--success-text);
+    border: 1px solid var(--success-border);
+}
+
+.error-notification {
+    background-color: var(--danger-bg);
+    color: var(--danger-text);
+    border: 1px solid var(--danger-border);
+}
+
+.warning-notification {
+    background-color: var(--warning-bg);
+    color: var(--warning-text);
+    border: 1px solid var(--warning-border);
 }

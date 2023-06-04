@@ -1,10 +1,11 @@
+import Notification from "../notification.js";
+
 const addUser = document.querySelector("#add-user");
 const cancelAddUser = document.querySelector("#cancel-add-user");
 const addUserForm = document.querySelector("#add-user-form");
 const removeUser = document.querySelector("#remove-user");
 const cancelRemoveUser = document.querySelector("#cancel-remove-user");
 const removeUserForm = document.querySelector("#confirm-remove-user");
-const statusMessage = document.querySelector("#status-message");
 let usersToDelete = [];
 let checkboxes = undefined;
 
@@ -57,12 +58,10 @@ addUserForm.addEventListener("submit", (e) => {
         const body = await res.json();
         console.log(body);
         if (res.status >= 400) {
-            statusMessage.style.color = "lightcoral";
-            statusMessage.innerText = body.message;
+            new Notification({ type: "error", text: body.message });
         }
         if (res.status === 201) {
-            statusMessage.style.color = "lightgreen";
-            statusMessage.innerText = body.message;
+            new Notification({ type: "success", text: body.message });
         }
 
         document.querySelector("#dim-background").style.opacity = 0.8;
@@ -113,8 +112,6 @@ removeUserForm.addEventListener("click", () => {
 
             // this is bad
             if (res.status >= 400) {
-                // statusMessage.style.color = "lightcoral";
-                // statusMessage.innerText = body.message;
                 unableToRemoveCount++;
             }
             if (res.status === 200) {
@@ -122,17 +119,14 @@ removeUserForm.addEventListener("click", () => {
             }
 
             if ((removedCount + unableToRemoveCount) === usersToDelete.length) {
-                statusMessage.style.color = "white";
                 if (removedCount !== usersToDelete.length) {
-                    statusMessage.style.color = "lightcoral";
-                    statusMessage.innerText = `${unableToRemoveCount} lietotāju(s) nevarēja noņemt!`;
+                    new Notification({ type: "error", text: `${unableToRemoveCount} lietotāju(s) nevarēja noņemt!` });
                     return;
                 }
-                statusMessage.style.color = "lightgreen";
                 if (removedCount === 1) {
-                    statusMessage.innerText = `${removedCount} lietotājs noņemts!`;
+                    new Notification({ type: "success", text: `${removedCount} lietotājs noņemts!` });
                 } else {
-                    statusMessage.innerText = `${removedCount} lietotāji noņemti!`;
+                    new Notification({ type: "success", text: `${removedCount} lietotāji noņemti!` });
                 }
 
             }

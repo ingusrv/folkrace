@@ -1,3 +1,5 @@
+import Notification from "../notification.js";
+
 const main = document.querySelector("main");
 fetch("/api/v1/robots").then(async (res) => {
     // robotId, key, status, lastUpdated
@@ -18,7 +20,6 @@ fetch("/api/v1/robots").then(async (res) => {
 
 // TODO: make this more responsive
 const addRobot = document.querySelector("#add-robot");
-const statusMessage = document.querySelector("#status-message");
 addRobot.addEventListener("click", (e) => {
     fetch("/api/v1/robot", {
         method: "POST",
@@ -27,12 +28,10 @@ addRobot.addEventListener("click", (e) => {
         const body = await res.json();
         console.log(body);
         if (res.status >= 400) {
-            statusMessage.style.color = "lightcoral";
-            statusMessage.innerText = body.message;
+            new Notification({ type: "error", text: body.message });
         }
         if (res.status === 201) {
-            statusMessage.style.color = "lightgreen";
-            statusMessage.innerText = body.message;
+            new Notification({ type: "success", text: body.message });
         }
     });
 });
@@ -91,12 +90,10 @@ function setupPanels() {
                 const body = await res.json();
                 console.log(body);
                 if (res.status >= 400) {
-                    statusMessage.style.color = "lightcoral";
-                    statusMessage.innerText = body.message;
+                    new Notification({ type: "error", text: body.message });
                 }
                 if (res.status === 200) {
-                    statusMessage.style.color = "lightgreen";
-                    statusMessage.innerText = body.message;
+                    new Notification({ type: "success", text: body.message });
                 }
             });
         });
@@ -114,12 +111,10 @@ function setupPanels() {
                 const body = await res.json();
                 console.log(body);
                 if (res.status >= 400) {
-                    statusMessage.style.color = "lightcoral";
-                    statusMessage.innerText = body.message;
+                    new Notification({ type: "error", text: body.message });
                 }
                 if (res.status === 200) {
-                    statusMessage.style.color = "lightgreen";
-                    statusMessage.innerText = body.message;
+                    new Notification({ type: "success", text: body.message });
                 }
             });
         });
