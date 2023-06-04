@@ -123,6 +123,7 @@ main {
     border-radius: 6px;
     font-size: 1rem;
     font-weight: 410;
+    cursor: pointer;
 }
 
 .primary {
