@@ -28,56 +28,41 @@
     </header>
 
     <main>
+        <dialog class="secondary-container" id="add-user-dialog">
+            <h2 class="dialog-title">Pievienot jaunu lietotāju</h2>
+            <form action="/api/v1/user" method="post" class="add-user-form" id="add-user-form">
+                <label for="username">Lietotājvārds</label>
+                <input class="input" type="text" name="username" id="username">
+                <label for="password">Parole</label>
+                <input class="input" type="password" name="password" id="password">
+                <label for="isAdmin" class="inline">Administrators</label>
+                <input type="checkbox" name="isAdmin" id="isAdmin">
+                <input class="button success width-full" type="submit" value="Pievienot">
+            </form>
+            <form method="dialog" id="close-view-data-dialog">
+                <button class="button primary">Atcelt</button>
+            </form>
+        </dialog>
+
         <div class="width-full">
-            <button class="button add-user" id="add-user">Pievienot</button>
-            <button class="button remove-user" id="remove-user">Noņemt</button>
+            <button class="button success" id="add-user">Pievienot</button>
         </div>
+
         <div class="panel">
-            <table class="user-table width-full" id="user-table">
-                <tr>
-                    <th></th>
-                    <th>Nr.</th>
-                    <th>Lietotājvārds</th>
-                    <th>Administrators</th>
-                    <th>Izveides datums</th>
-                </tr>
-                <!-- <tr>
-                    <td>1.</td>
-                    <td>Foo</td>
-                    <td>foobar123</td>
-                    <td>01/02/2023 12:08</td>
-                </tr>
-                <tr>
-                    <td>2.</td>
-                    <td>Bar</td>
-                    <td>barbaz123</td>
-                    <td>01/02/2023 12:10</td>
-                </tr> -->
+            <table class="data-table width-full" id="user-table">
+                <thead>
+                    <tr>
+                        <th>Nr.</th>
+                        <th>Lietotājvārds</th>
+                        <th>Administrators</th>
+                        <th>Izveides datums</th>
+                        <th>Darbības</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
             </table>
         </div>
-        <div class="addUserPrompt hidden" id="add-user-prompt">
-            <div class="form-container">
-                <form action="/api/v1/user" method="post" id="add-user-form">
-                    <label for="username">Lietotājvārds</label>
-                    <input class="input" type="text" name="username" id="username">
-                    <label for="password">Parole</label>
-                    <input class="input" type="password" name="password" id="password">
-                    <label for="isAdmin" class="inline">Administrators</label>
-                    <input type="checkbox" name="isAdmin" id="isAdmin">
-                    <input class="button add-user width-full" type="submit" value="Pievienot">
-                </form>
-                <button class="button remove-user width-full" id="cancel-add-user">Atcelt</button>
-            </div>
-        </div>
-        <div class="removeUserPrompt hidden" id="remove-user-prompt">
-            <div class="form-container" id="remove-user-form">
-                <p>Vai tiešām vēlaties izdzēst?</p>
-                <button class="button add-user width-full" id="confirm-remove-user">Izdzēst</button>
-                <button class="button remove-user width-full" id="cancel-remove-user">Atcelt</button>
-            </div>
-        </div>
     </main>
-
 </body>
 
 </html>

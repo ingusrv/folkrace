@@ -77,6 +77,26 @@ main {
     border-radius: 12px;
 }
 
+.danger {
+    background-color: var(--error);
+    color: var(--on-error);
+}
+
+.success {
+    background-color: var(--success);
+    color: var(--on-success);
+}
+
+.secondary {
+    background-color: var(--secondary);
+    color: var(--on-secondary);
+}
+
+.secondary-container {
+    background-color: var(--secondary-container);
+    color: var(--on-secondary-container);
+}
+
 .bg-green {
     background-color: lightgreen;
 }
@@ -117,6 +137,10 @@ main {
     width: 100%;
 }
 
+.width-half {
+    width: 50%;
+}
+
 .button {
     border: none;
     padding: 6px 16px;
@@ -155,6 +179,33 @@ main {
     font-size: 1rem;
     font-weight: 500;
     padding: 0.5rem;
+}
+
+dialog {
+    border: none;
+    border-radius: 12px;
+}
+
+dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.dialog-title {
+    margin-top: 0;
+    margin-bottom: 1rem;
+}
+
+.data-table th {
+    text-align: left;
+    padding: 1rem;
+}
+
+.data-table td {
+    padding: 1rem;
+}
+
+.data-table button {
+    margin-right: 0.3rem;
 }
 
 .notification-container {

@@ -16,25 +16,20 @@ main {
     overflow: hidden;
 }
 
-.form-container {
-    background-color: var(--secondary-container);
-    width: 25rem;
-    padding: 1em;
+.add-user-form {
     font-size: 1.5rem;
-    z-index: 10;
-    border-radius: 12px;
 }
 
-.form-container * {
+.add-user-form * {
     display: block;
 }
 
-.form-container input {
+.add-user-form input {
     width: 100%;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
 }
 
-.form-container input[type=checkbox] {
+.add-user-form input[type=checkbox] {
     display: inline;
     width: 1.25rem;
     height: 1.25rem;
@@ -60,10 +55,6 @@ main {
 
 .removeUserPrompt button:last-child {
     margin-top: 2rem;
-}
-
-.user-table th {
-    text-align: left;
 }
 
 .add-user {
