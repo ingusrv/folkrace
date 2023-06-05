@@ -104,8 +104,13 @@ function loadRobots() {
                 });
             });
 
-            let ws = openSockets[robot.robotId];;
+            let ws = openSockets[robot.robotId];
             let robotRunning = false;
+
+            // ja mums websocket ir cached tad mēs paprasam statusu pēc reload
+            if (ws) {
+                ws.send(JSON.stringify({ type: "status", robotId: robot.robotId }));
+            }
 
             if (!ws) {
                 ws = new WebSocket(`ws://${window.location.host}/api/panel`);
@@ -126,15 +131,6 @@ function loadRobots() {
                 switch (data.type) {
                     case "connect":
                         openSockets[robot.robotId] = ws;
-
-                        startRobot.addEventListener("click", (e) => {
-                            if (robotRunning) {
-                                ws.send(JSON.stringify({ robotId: robot.robotId, type: "stop" }));
-                                return;
-                            }
-
-                            ws.send(JSON.stringify({ robotId: robot.robotId, delay: Number(delayInput.value), type: "start" }));
-                        });
                         break;
                     case "status":
                         switch (data.status.code) {
@@ -165,6 +161,15 @@ function loadRobots() {
                         console.log(`Nezināms ziņas tips: ${data.type}`);
                         break;
                 }
+            });
+
+            startRobot.addEventListener("click", (e) => {
+                if (robotRunning) {
+                    ws.send(JSON.stringify({ robotId: robot.robotId, type: "stop" }));
+                    return;
+                }
+
+                ws.send(JSON.stringify({ robotId: robot.robotId, delay: Number(delayInput.value), type: "start" }));
             });
 
             row.append(number, robotId, createdAt, key, delay, robotStatus, actions);

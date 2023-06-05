@@ -325,8 +325,10 @@ robotPanelWss.on("connection", (ws) => {
 
         const robotClient = connectedRobots[robot.robotId];
         let robotWs = undefined;
+        let robotStatus = { code: 0, running: false, message: "Nav savienots" };
         if (robotClient) {
             robotWs = robotClient.websocket;
+            robotStatus = robotClient.status;
         }
 
         switch (data.type) {
@@ -343,10 +345,6 @@ robotPanelWss.on("connection", (ws) => {
                     message: "Savienots"
                 }));
 
-                let robotStatus = { code: 0, message: "Nav savienots" };
-                if (robotClient) {
-                    robotStatus = robotClient.status;
-                }
                 ws.send(JSON.stringify({ type: "status", robotId: robot.robotId, status: robotStatus }));
                 break;
             case "start":
@@ -373,6 +371,9 @@ robotPanelWss.on("connection", (ws) => {
                 robotWs.send(JSON.stringify({
                     type: "stop",
                 }));
+                break;
+            case "status":
+                ws.send(JSON.stringify({ type: "status", robotId: robot.robotId, status: robotStatus }));
                 break;
             default:
                 ws.send(JSON.stringify({ code: 400, type: "error", message: "Nezināms ziņas tips" }));
