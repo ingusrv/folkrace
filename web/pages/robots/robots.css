@@ -3,43 +3,16 @@ header ul li:nth-child(2) {
     border-radius: 5px;
 }
 
-.connection-token-input {
+.key {
+    width: 10.2rem;
+    border: none;
     cursor: default;
 }
 
-.connection-token-input:focus {
+.key:focus {
     outline: none;
 }
 
-.grid-1col-gap {
-    display: grid;
-    grid-template-columns: auto;
-    grid-gap: 1em;
-}
-
-.status-message {
-    margin: 0 auto;
-}
-
-.generate-new-token {
-    display: block;
-    margin-top: 1em;
-}
-
-.delete-robot {
-    position: absolute;
-    right: 1rem;
-    top: 1rem;
-    background-color: var(--error);
-    color: var(--on-error);
-}
-
-.add-robot {
-    background-color: var(--success);
-    color: var(--on-success);
-}
-
-.start-delay {
-    width: 4.2rem;
-    margin-bottom: 1em;
+.delay {
+    width: 3rem;
 }

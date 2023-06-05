@@ -1,25 +1,218 @@
 import Notification from "../notification.js";
 
-const main = document.querySelector("main");
-fetch("/api/v1/robots").then(async (res) => {
-    // robotId, key, status, lastUpdated
-    const body = await res.json();
-    console.log(body);
-
-    if (body.data == {}) {
-        return;
-    }
-
-    body.data.forEach((item) => {
-        const el = createPanel(item);
-        main.appendChild(el);
-    });
-
-    setupPanels();
-});
-
-// TODO: make this more responsive
 const addRobot = document.querySelector("#add-robot");
+const robotTable = document.querySelector("#robot-table").querySelector("tbody");
+const openSockets = {};
+
+function loadRobots() {
+    robotTable.replaceChildren();
+    fetch("/api/v1/robots").then(async (res) => {
+        if (res.status >= 400) {
+            new Notification({ type: "error", text: "Notika kļūda ielādējot lietotāju datus!" });
+            return;
+        }
+
+        const body = await res.json();
+        console.log(body);
+
+        if (Object.entries(body.data).length === 0) {
+            robotTable.textContent = "Nav neviena robota";
+            return;
+        }
+
+        body.data.forEach((robot, i) => {
+            const row = document.createElement("tr");
+
+            // dati
+            const number = document.createElement("td");
+            number.textContent = ++i;
+            const robotId = document.createElement("td");
+            robotId.textContent = robot.robotId;
+            const createdAt = document.createElement("td");
+            createdAt.textContent = robot.createdAt;
+            const keyContainer = document.createElement("div");
+            keyContainer.style.width = "max-content";
+            const key = document.createElement("td");
+            const toggleKeyVisibility = document.createElement("button");
+            toggleKeyVisibility.classList.add("none", "text-outline");
+            // kad būs ikonas šis mainīsies
+            toggleKeyVisibility.style.fontSize = "2rem";
+            toggleKeyVisibility.innerHTML = "&#9788;";
+            const keyValue = document.createElement("input");
+            keyValue.readOnly = true;
+            keyValue.classList.add("input", "key");
+            keyValue.type = "password";
+            keyValue.value = robot.key;
+            toggleKeyVisibility.addEventListener("click", (e) => {
+                if (keyValue.type === "password") {
+                    keyValue.type = "text";
+                    toggleKeyVisibility.innerHTML = "&#9728;";
+                } else {
+                    keyValue.type = "password";
+                    toggleKeyVisibility.innerHTML = "&#9788;";
+                }
+            });
+            keyContainer.append(toggleKeyVisibility, keyValue);
+            key.append(keyContainer);
+            const delay = document.createElement("td");
+            const delayInput = document.createElement("input");
+            delayInput.classList.add("input", "delay");
+            delayInput.type = "text";
+            delayInput.value = 0;
+            delay.append(delayInput);
+            const serverStatus = document.createElement("td");
+            const serverStatusValue = document.createElement("span");
+            serverStatusValue.classList.add("pill", "danger");
+            serverStatusValue.textContent = "Nav savienots";
+            serverStatus.append(serverStatusValue);
+            const robotStatus = document.createElement("td");
+            const robotStatusValue = document.createElement("span");
+            robotStatusValue.classList.add("pill", "danger");
+            robotStatusValue.textContent = "Nav savienots";
+            robotStatus.append(robotStatusValue);
+
+            // darbības
+            // actions konteinteris pazudīs kad būs ikonas
+            const actionsContainer = document.createElement("div");
+            actionsContainer.style.width = "max-content";
+            const actions = document.createElement("td");
+            const connectToServer = document.createElement("button");
+            connectToServer.classList.add("button", "primary");
+            connectToServer.textContent = "Savienoties";
+            const startRobot = document.createElement("button");
+            startRobot.classList.add("button", "primary");
+            startRobot.textContent = "Sākt robota programmu";
+            const openSettings = document.createElement("button");
+            openSettings.classList.add("button", "secondary");
+            openSettings.textContent = "Iestatījumi";
+            const deleteRobot = document.createElement("button");
+            deleteRobot.classList.add("button", "danger");
+            deleteRobot.textContent = "Izdzēst";
+
+            actionsContainer.append(connectToServer, startRobot, openSettings, deleteRobot);
+            actions.append(actionsContainer);
+
+            // pārbaudam vai savienojums ar serveri jau izveidots
+            if (openSockets[robot.robotId]) {
+                serverStatusValue.classList.remove("danger");
+                serverStatusValue.classList.add("success");
+                serverStatusValue.textContent = "Savienots";
+                connectToServer.textContent = "Atvienoties";
+            }
+
+            // pogu funkcionalitāte
+            let ws = undefined;
+            let connectedToServer = false;
+            connectToServer.addEventListener("click", () => {
+                console.log(openSockets, connectedToServer);
+                if (connectedToServer) {
+                    console.log(`${robot.robotId} socket atvienojas`);
+                    openSockets[robot.robotId].close();
+                    return;
+                }
+
+                ws = openSockets[robot.robotId];
+                if (!ws) {
+                    ws = new WebSocket(`ws://${window.location.host}/api/v1/panel`);
+                }
+                let programStarted = false;
+
+                ws.addEventListener("open", (e) => {
+                    ws.send(JSON.stringify({ type: "connect", robotId: robot.robotId }));
+                });
+
+                ws.addEventListener("close", (e) => {
+                    delete openSockets[robot.robotId];
+                    connectToServer.textContent = "Savienoties";
+                    connectedToServer = false;
+
+                    serverStatusValue.classList.remove("success");
+                    serverStatusValue.classList.add("danger");
+                    serverStatusValue.textContent = "Nav savienots";
+                });
+
+                ws.addEventListener("message", (e) => {
+                    const data = JSON.parse(e.data);
+                    console.log(data);
+
+                    switch (data.type) {
+                        case "connect":
+                            openSockets[robot.robotId] = ws;
+                            connectToServer.textContent = "Atvienoties";
+                            connectedToServer = true;
+
+                            serverStatusValue.classList.remove("danger");
+                            serverStatusValue.classList.add("success");
+                            serverStatusValue.textContent = data.message;
+
+                            startRobot.addEventListener("click", (e) => {
+                                if (programStarted === true) {
+                                    ws.send(JSON.stringify({ robotId: robot.robotId, type: "stop" }));
+
+                                    startRobot.textContent = "Sākt robota programmu";
+                                    programStarted = false;
+                                    return;
+                                }
+
+                                ws.send(JSON.stringify({ robotId: robot.robotId, delay: Number(delayInput.value), type: "start" }));
+                                startRobot.textContent = "Beigt robota programmu";
+                                programStarted = true;
+                            });
+
+                            break;
+                        case "status":
+                            switch (data.status.code) {
+                                case 0:
+                                    if (programStarted) {
+                                        startRobot.innerText = "Sākt robota programmu";
+                                        programStarted = false;
+                                    }
+
+                                    robotStatusValue.classList.remove("success")
+                                    robotStatusValue.classList.add("danger");
+                                    robotStatusValue.innerText = data.status.message;
+                                    break;
+                                case 1:
+                                    robotStatusValue.classList.remove("danger")
+                                    robotStatusValue.classList.add("success");
+                                    robotStatusValue.innerText = data.status.message;
+                                    break;
+                                default:
+                                    console.log(`Nezināms statusa kods: ${data.status.code}`);
+                                    break;
+                            }
+                            break;
+                        default:
+                            console.log(`Nezināms ziņas tips: ${data.type}`);
+                            break;
+                    }
+                });
+            });
+            openSettings.addEventListener("click", () => { });
+            deleteRobot.addEventListener("click", () => {
+                fetch(`/api/v1/robot/${robot.robotId}`, {
+                    method: "DELETE",
+                    mode: "same-origin",
+                }).then(async (res) => {
+                    const body = await res.json();
+                    console.log(body);
+                    if (res.status >= 400) {
+                        new Notification({ type: "error", text: body.message });
+                        return;
+                    }
+
+                    new Notification({ type: "success", text: body.message });
+                    // nav optimāli pārlādēt visu sarakstu, bet pagaidām strādā
+                    loadRobots();
+                });
+            });
+
+            row.append(number, robotId, createdAt, key, delay, serverStatus, robotStatus, actions);
+            robotTable.appendChild(row);
+        });
+    });
+}
+
 addRobot.addEventListener("click", (e) => {
     fetch("/api/v1/robot", {
         method: "POST",
@@ -29,197 +222,13 @@ addRobot.addEventListener("click", (e) => {
         console.log(body);
         if (res.status >= 400) {
             new Notification({ type: "error", text: body.message });
+            return;
         }
-        if (res.status === 201) {
-            new Notification({ type: "success", text: body.message });
-        }
+
+        new Notification({ type: "success", text: body.message });
+        // nav optimāli pārlādēt visu sarakstu, bet pagaidām strādā
+        loadRobots();
     });
 });
 
-function createPanel(robotData) {
-    const div = document.createElement("div");
-    // TODO: fix potential XSS
-    div.innerHTML = `
-    <div class="panel grid-1col-gap relative" data-robot-id="${robotData.robotId}">
-        <h2 class="margin-0">Robots '${robotData.robotId}'</h2>
-        <button class="button delete-robot" data-delete-robot>Izdzēst</button>
-        <div class="connection-token" data-connection-token>
-            <button class="button primary show-connection-token" data-show-connection-token>Parādīt savienošanās atslēgu</button>
-            <input class="input connection-token-input" type="password" name="token" value="${robotData.key}" readonly>
-            <button class="button primary generate-new-token" data-generate-new-token>Izveidot jaunu savienošanās atslēgu</button>
-        </div>
-        <div class="server-controls" data-server-controls>
-            <button class="button primary inline" data-connect-to-server>Savienoties</button>
-            <p class="inline">Savienojuma statuss: <span class="text-red" data-server-status>Nav Savienots</span>
-            </p>
-        </div>
-        <div class="robot-controls hidden" data-robot-controls>
-            <div>
-                <label for="start-delay">Starta delay (sekundēs):</label>
-                <input class="input start-delay" type="number" name="start-delay" value="0" data-start-delay>
-            </div>
-            <button class="button primary inline" data-start-robot>Sākt robota programmu</button>
-            <p class="inline">Robota statuss: <span data-robot-status></span></p>
-        </div>
-    </div>
-    `;
-    return div;
-}
-
-function setupPanels() {
-    const connectionTokens = document.querySelectorAll("[data-connection-token]");
-    connectionTokens.forEach((root) => {
-        const toggle = root.querySelector("[data-show-connection-token]");
-        const token = root.querySelector("input");
-        const generateNewToken = root.querySelector("[data-generate-new-token]");
-        const robotId = root.parentElement.dataset.robotId;
-        toggle.addEventListener("click", (e) => {
-            if (token.type === "password") {
-                token.type = "text";
-                toggle.innerText = "Paslēpt savienošanās atslēgu";
-            } else {
-                token.type = "password";
-                toggle.innerText = "Parādīt savienošanās atslēgu";
-            }
-        });
-        generateNewToken.addEventListener("click", (e) => {
-            fetch(`/api/v1/robotToken/${robotId}`, {
-                method: "POST",
-                mode: "same-origin",
-            }).then(async (res) => {
-                const body = await res.json();
-                console.log(body);
-                if (res.status >= 400) {
-                    new Notification({ type: "error", text: body.message });
-                }
-                if (res.status === 200) {
-                    new Notification({ type: "success", text: body.message });
-                }
-            });
-        });
-    });
-
-    const panels = document.querySelectorAll("[data-robot-id]");
-    panels.forEach((panel) => {
-        const deleteRobot = panel.querySelector("[data-delete-robot]");
-        const robotId = panel.dataset.robotId;
-        deleteRobot.addEventListener("click", (e) => {
-            fetch(`/api/v1/robot/${robotId}`, {
-                method: "DELETE",
-                mode: "same-origin",
-            }).then(async (res) => {
-                const body = await res.json();
-                console.log(body);
-                if (res.status >= 400) {
-                    new Notification({ type: "error", text: body.message });
-                }
-                if (res.status === 200) {
-                    new Notification({ type: "success", text: body.message });
-                }
-            });
-        });
-    });
-
-    let openSockets = [];
-    const serverControls = document.querySelectorAll("[data-server-controls]");
-    serverControls.forEach((root) => {
-        const connectToServer = root.querySelector("[data-connect-to-server]");
-        const serverStatus = root.querySelector("[data-server-status]");
-        const robotId = root.parentElement.dataset.robotId;
-        const robotControls = root.parentElement.querySelector("[data-robot-controls]");
-        const startRobot = robotControls.querySelector("[data-start-robot]");
-        const robotStatus = robotControls.querySelector("[data-robot-status]");
-        const delayInput = robotControls.querySelector("[data-start-delay]");
-        let connectedToServer = false;
-
-        connectToServer.addEventListener("click", (e) => {
-            if (connectedToServer === true) {
-                console.log(`${robotId} socket atvienojas`);
-                openSockets[robotId].close(1000, String(robotId));
-                return;
-            }
-
-            console.log(robotId);
-            const ws = new WebSocket(`ws://${window.location.host}/api/v1/panel`);
-            let programStarted = false;
-
-            ws.addEventListener("open", (e) => {
-                ws.send(JSON.stringify({ type: "connect", robotId: robotId }));
-            });
-
-            ws.addEventListener("close", (e) => {
-                console.log(e);
-
-                connectToServer.innerText = "Savienoties";
-                connectedToServer = false;
-
-                serverStatus.classList.remove("text-green");
-                serverStatus.classList.add("text-red");
-                serverStatus.innerText = "Nav savienots";
-
-                robotControls.classList.add("hidden");
-            });
-
-            ws.addEventListener("message", (e) => {
-                const data = JSON.parse(e.data);
-                console.log(data);
-
-                switch (data.type) {
-                    case "connect":
-                        openSockets[robotId] = ws;
-                        connectToServer.innerText = "Atvienoties";
-                        connectedToServer = true;
-
-                        serverStatus.classList.remove("text-red");
-                        serverStatus.classList.add("text-green");
-                        serverStatus.innerText = data.message;
-                        robotControls.classList.remove("hidden");
-
-                        startRobot.addEventListener("click", (e) => {
-                            if (programStarted === true) {
-                                ws.send(JSON.stringify({ robotId: robotId, type: "stop" }));
-
-                                startRobot.innerText = "Sākt robota programmu";
-                                programStarted = false;
-                                return;
-                            }
-
-                            ws.send(JSON.stringify({ robotId: robotId, delay: Number(delayInput.value), type: "start" }));
-                            startRobot.innerText = "Beigt robota programmu";
-                            programStarted = true;
-                        });
-
-                        break;
-                    case "status":
-                        console.log(robotStatus);
-                        switch (data.status.code) {
-                            case 0:
-                                if (programStarted) {
-                                    startRobot.innerText = "Sākt robota programmu";
-                                    programStarted = false;
-                                }
-
-                                robotStatus.classList.remove("text-green")
-                                robotStatus.classList.add("text-red");
-
-                                robotStatus.innerText = data.status.message;
-                                break;
-                            case 1:
-                                robotStatus.classList.remove("text-red");
-                                robotStatus.classList.add("text-green");
-
-                                robotStatus.innerText = data.status.message;
-                                break;
-                            default:
-                                console.log(`Nezināms statusa kods: ${data.status.code}`);
-                                break;
-                        }
-                        break;
-                    default:
-                        console.log(`Nezināms ziņas tips: ${data.type}`);
-                        break;
-                }
-            });
-        });
-    });
-}
+loadRobots();
