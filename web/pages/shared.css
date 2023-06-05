@@ -56,24 +56,18 @@ body {
     font-family: "noto sans";
 }
 
-header {
-    background-color: var(--foreground);
-    margin-bottom: 4em;
-    font-size: 1.25rem;
-}
-
 main {
     width: 85%;
     margin: auto;
     display: grid;
-    gap: 2em;
+    gap: 2rem;
 }
 
 .panel {
     background-color: var(--foreground);
     width: 100%;
-    overflow-x: scroll;
-    padding: 2em;
+    overflow-x: auto;
+    padding: 2rem;
     border-radius: 12px;
 }
 
