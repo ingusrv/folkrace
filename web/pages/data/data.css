@@ -3,34 +3,6 @@ header ul li:nth-child(1) {
     border-radius: 5px;
 }
 
-.data-table th {
-    text-align: left;
-}
-
-.short-data {
-    display: inline-block;
-    width: 66px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-dialog {
-    background-color: var(--secondary-container);
-    color: var(--on-secondary-container);
-    border: none;
-    border-radius: 12px;
-    width: 50%;
-}
-
-dialog::backdrop {
-    background-color: rgba(0, 0, 0, 0.5);
-}
-
-.dialog-title {
-    margin-top: 0;
-    margin-bottom: 1rem;
-}
-
 .chart-container {
     background-color: var(--background);
     margin-bottom: 1rem;

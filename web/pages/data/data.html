@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="../header.css">
     <link rel="stylesheet" type="text/css" href="data.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
-    <script src="data.js" defer></script>
+    <script src="data.js" type="module" defer></script>
     <script src="../username.js" defer></script>
     <title>Braucienu dati</title>
 </head>
@@ -28,7 +28,7 @@
     </header>
 
     <main>
-        <dialog id="chart-dialog">
+        <dialog class="secondary-container width-half" id="chart-dialog">
             <h2 class="dialog-title">Datu salīdzinājums</h2>
             <div class="chart-container">
                 <canvas id="comparison-chart"></canvas>
@@ -37,7 +37,7 @@
                 <button class="button primary">Aizvērt</button>
             </form>
         </dialog>
-        <dialog id="view-data-dialog">
+        <dialog class="secondary-container width-half" id="view-data-dialog">
             <h2 class="dialog-title">No robota saņemtie dati</h2>
             <div id="text-window" class="text-window"></div>
             <form method="dialog" id="close-view-data-dialog">
@@ -49,29 +49,21 @@
             <button class="button primary compare-data" id="compare-data">salīdzināt</button>
         </div>
         <div class="panel">
-            <table class="data-table width-full" id="run-table">
-                <tr>
-                    <th></th>
-                    <th>Nr.</th>
-                    <th>Robota nosaukums</th>
-                    <th>Izveides datums</th>
-                    <th>Algoritms</th>
-                    <th>Versija</th>
-                    <th>Piezīme</th>
-                    <th>Vidējais FPS</th>
-                    <th>Braukšanas laiks, s</th>
-                    <th>Dati</th>
-                </tr>
-                <!-- <tr>
-                    <td>1.</td>
-                    <td>01/02/2023 15:00</td>
-                    <td>foo</td>
-                </tr>
-                <tr>
-                    <td>2.</td>
-                    <td>01/02/2023 12:18</td>
-                    <td>bar</td>
-                </tr> -->
+            <table class="data-table width-full" id="data-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Nr.</th>
+                        <th>Robota nosaukums</th>
+                        <th>Izveides datums</th>
+                        <th>Algoritms</th>
+                        <th>Versija</th>
+                        <th>Vidējais FPS</th>
+                        <th>Braukšanas laiks, s</th>
+                        <th>Dati</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
             </table>
         </div>
     </main>
