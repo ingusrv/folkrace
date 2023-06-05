@@ -5,7 +5,7 @@ const dataTable = document.querySelector("#data-table").querySelector("tbody");
 function getData() {
     dataTable.replaceChildren();
     let dataToCompare = [];
-    fetch("/api/v1/driveData").then(async (res) => {
+    fetch("/api/driveData").then(async (res) => {
         if (res.status >= 400) {
             new Notification({ type: "error", text: "Notika kļūda ielādējot braucienu datus!" });
             return;

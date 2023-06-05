@@ -6,7 +6,7 @@ const openSockets = {};
 
 function loadRobots() {
     robotTable.replaceChildren();
-    fetch("/api/v1/robots").then(async (res) => {
+    fetch("/api/robots").then(async (res) => {
         if (res.status >= 400) {
             new Notification({ type: "error", text: "Notika kļūda ielādējot lietotāju datus!" });
             return;
@@ -113,7 +113,7 @@ function loadRobots() {
 
                 ws = openSockets[robot.robotId];
                 if (!ws) {
-                    ws = new WebSocket(`ws://${window.location.host}/api/v1/panel`);
+                    ws = new WebSocket(`ws://${window.location.host}/api/panel`);
                 }
                 let programStarted = false;
 
@@ -190,7 +190,7 @@ function loadRobots() {
             });
             openSettings.addEventListener("click", () => { });
             deleteRobot.addEventListener("click", () => {
-                fetch(`/api/v1/robot/${robot.robotId}`, {
+                fetch(`/api/robot/${robot.robotId}`, {
                     method: "DELETE",
                     mode: "same-origin",
                 }).then(async (res) => {
@@ -214,7 +214,7 @@ function loadRobots() {
 }
 
 addRobot.addEventListener("click", (e) => {
-    fetch("/api/v1/robot", {
+    fetch("/api/robot", {
         method: "POST",
         mode: "same-origin",
     }).then(async (res) => {

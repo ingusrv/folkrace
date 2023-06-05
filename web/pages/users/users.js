@@ -6,7 +6,7 @@ const userTable = document.querySelector("#user-table").querySelector("tbody");
 
 function loadUsers() {
     userTable.replaceChildren();
-    fetch("/api/v1/users").then(async (res) => {
+    fetch("/api/users").then(async (res) => {
         if (res.status >= 400) {
             new Notification({ type: "error", text: "Notika kļūda ielādējot lietotāju datus!" });
             return;
@@ -42,7 +42,7 @@ function loadUsers() {
             // pogu funkcionalitāte
             editButton.addEventListener("click", () => { });
             deleteButton.addEventListener("click", () => {
-                fetch(`/api/v1/user/${user.username}`, {
+                fetch(`/api/user/${user.username}`, {
                     method: "DELETE",
                     mode: "same-origin",
                 }).then(async (res) => {
@@ -82,7 +82,7 @@ addUser.addEventListener("click", (e) => {
             admin: isAdmin.checked
         };
 
-        fetch("/api/v1/user", {
+        fetch("/api/user", {
             method: "POST",
             mode: "same-origin",
             headers: {

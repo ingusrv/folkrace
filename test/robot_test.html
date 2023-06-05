@@ -36,7 +36,7 @@
         const key = keyEl.value;
 
         connectButton.addEventListener("click", () => {
-            let ws = new WebSocket("ws://localhost:3000/api/v1/robot");
+            let ws = new WebSocket("ws://localhost:3000/api/robot");
 
             ws.addEventListener("open", (e) => {
                 console.log("savienojums atvērts");

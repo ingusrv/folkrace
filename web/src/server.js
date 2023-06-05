@@ -16,7 +16,6 @@ const DATABASE_URI = process.env.DATABASE_URI;
 const PORT = process.env.ENVIRONMENT === "prod" ? process.env.PROD_PORT : process.env.DEV_PORT;
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const SALT_ROUNDS = 12;
-const API_VERSION = "v1";
 const __dirname = path.resolve();
 const mongoClient = new MongoClient(DATABASE_URI);
 await mongoClient.connect();
@@ -46,7 +45,7 @@ app.use((req, res, next) => {
         next();
         return;
     }
-    if (req.path === `/api/${API_VERSION}/driveData` && req.method === "POST") {
+    if (req.path === `/api/driveData` && req.method === "POST") {
         next()
         return;
     }
@@ -125,12 +124,12 @@ app.get("/logout", (req, res) => {
 });
 
 // api
-app.get(`/api/${API_VERSION}/driveData`, async (req, res) => {
+app.get(`/api/driveData`, async (req, res) => {
     const data = await getDriveData(mongoClient);
     res.status(200).json({ data: data });
 });
 
-app.post(`/api/${API_VERSION}/driveData`, async (req, res) => {
+app.post(`/api/driveData`, async (req, res) => {
     const data = req.body;
 
     if (!data.elapsedTime || !data.data || data.data === []) {
@@ -150,7 +149,7 @@ app.post(`/api/${API_VERSION}/driveData`, async (req, res) => {
     res.status(201).json({ message: "dati pievienoti veiksmīgi!" });
 });
 
-app.get(`/api/${API_VERSION}/users`, async (req, res) => {
+app.get(`/api/users`, async (req, res) => {
     const data = await getUsers(mongoClient);
     data.forEach(item => {
         delete item.password;
@@ -159,7 +158,7 @@ app.get(`/api/${API_VERSION}/users`, async (req, res) => {
     res.status(200).json({ data: data });
 });
 
-app.get(`/api/${API_VERSION}/user`, async (req, res) => {
+app.get(`/api/user`, async (req, res) => {
     // const data = await getUsers(client);
     const data = {
         username: jwt.verify(req.cookies.token, PRIVATE_KEY).user
@@ -167,7 +166,7 @@ app.get(`/api/${API_VERSION}/user`, async (req, res) => {
     res.status(200).json(data);
 });
 
-app.post(`/api/${API_VERSION}/user`, async (req, res) => {
+app.post(`/api/user`, async (req, res) => {
     // TODO: check if user is admin
     const user = req.body;
 
@@ -211,7 +210,7 @@ app.post(`/api/${API_VERSION}/user`, async (req, res) => {
     res.status(201).json({ message: "lietotājs veiksmīgi izveidots!" });
 });
 
-app.delete(`/api/${API_VERSION}/user/:username`, async (req, res) => {
+app.delete(`/api/user/:username`, async (req, res) => {
     const username = req.params.username;
     if (username === "") {
         res.status(400).json({ message: "netika norādīts lietotājvārds!" });
@@ -242,12 +241,12 @@ app.delete(`/api/${API_VERSION}/user/:username`, async (req, res) => {
     res.status(200).json({ message: "lietotājs noņemts" });
 });
 
-app.get(`/api/${API_VERSION}/robots`, async (req, res) => {
+app.get(`/api/robots`, async (req, res) => {
     const data = await getRobots(mongoClient);
     res.status(200).json({ data: data });
 });
 
-app.post(`/api/${API_VERSION}/robot`, async (req, res) => {
+app.post(`/api/robot`, async (req, res) => {
     // TODO: return inserted robot
     const robot = {
         robotId: crypto.randomBytes(2).toString('hex'),
@@ -267,7 +266,7 @@ app.post(`/api/${API_VERSION}/robot`, async (req, res) => {
     res.status(201).json({ message: "robots veiksmīgi izveidots!" });
 });
 
-app.delete(`/api/${API_VERSION}/robot/:robotId`, async (req, res) => {
+app.delete(`/api/robot/:robotId`, async (req, res) => {
     const robotId = req.params.robotId;
 
     if (robotId === "") {
@@ -284,7 +283,7 @@ app.delete(`/api/${API_VERSION}/robot/:robotId`, async (req, res) => {
     res.status(200).json({ message: "robots izdzēsts!" });
 });
 
-app.post(`/api/${API_VERSION}/robotToken/:robotId`, async (req, res) => {
+app.post(`/api/robotToken/:robotId`, async (req, res) => {
     const robotId = req.params.robotId;
 
     if (robotId === "") {
@@ -519,12 +518,12 @@ const server = app.listen(PORT, () => console.log(`server started at http://loca
 server.on("upgrade", (req, socket, head) => {
     const { pathname } = parse(req.url);
 
-    if (pathname === `/api/${API_VERSION}/panel`) {
+    if (pathname === `/api/panel`) {
         // TODO: auth
         robotPanelWss.handleUpgrade(req, socket, head, (ws) => {
             robotPanelWss.emit("connection", ws, req);
         });
-    } else if (pathname === `/api/${API_VERSION}/robot`) {
+    } else if (pathname === `/api/robot`) {
         robotControlWss.handleUpgrade(req, socket, head, (ws) => {
             robotControlWss.emit("connection", ws, req);
         });

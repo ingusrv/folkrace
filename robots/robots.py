@@ -25,7 +25,7 @@ stop_time = None
 
 
 def main():
-    with connect(f"ws://{ADDRESS}:{PORT}/api/v1/robot") as ws:
+    with connect(f"ws://{ADDRESS}:{PORT}/api/robot") as ws:
         ws.send(json.dumps({"type": "connect", "key": KEY}))
         message = json.loads(ws.recv())
         if message["type"] == "connect":
