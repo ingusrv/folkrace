@@ -103,6 +103,7 @@ function loadRobots() {
             // pogu funkcionalitāte
             let ws = undefined;
             let connectedToServer = false;
+            let robotRunning = false;
             connectToServer.addEventListener("click", () => {
                 console.log(openSockets, connectedToServer);
                 if (connectedToServer) {
@@ -115,7 +116,6 @@ function loadRobots() {
                 if (!ws) {
                     ws = new WebSocket(`ws://${window.location.host}/api/panel`);
                 }
-                let programStarted = false;
 
                 ws.addEventListener("open", (e) => {
                     ws.send(JSON.stringify({ type: "connect", robotId: robot.robotId }));
@@ -146,41 +146,39 @@ function loadRobots() {
                             serverStatusValue.textContent = data.message;
 
                             startRobot.addEventListener("click", (e) => {
-                                if (programStarted === true) {
+                                if (robotRunning) {
                                     ws.send(JSON.stringify({ robotId: robot.robotId, type: "stop" }));
-
-                                    startRobot.textContent = "Sākt robota programmu";
-                                    programStarted = false;
                                     return;
                                 }
 
                                 ws.send(JSON.stringify({ robotId: robot.robotId, delay: Number(delayInput.value), type: "start" }));
-                                startRobot.textContent = "Beigt robota programmu";
-                                programStarted = true;
                             });
 
                             break;
                         case "status":
                             switch (data.status.code) {
                                 case 0:
-                                    if (programStarted) {
-                                        startRobot.innerText = "Sākt robota programmu";
-                                        programStarted = false;
-                                    }
-
                                     robotStatusValue.classList.remove("success")
                                     robotStatusValue.classList.add("danger");
-                                    robotStatusValue.innerText = data.status.message;
+                                    robotStatusValue.textContent = data.status.message;
                                     break;
                                 case 1:
                                     robotStatusValue.classList.remove("danger")
                                     robotStatusValue.classList.add("success");
-                                    robotStatusValue.innerText = data.status.message;
+                                    robotStatusValue.textContent = data.status.message;
                                     break;
                                 default:
                                     console.log(`Nezināms statusa kods: ${data.status.code}`);
                                     break;
                             }
+
+                            robotRunning = data.status.running;
+                            if (robotRunning) {
+                                startRobot.textContent = "Beigt robota programmu";
+                                return;
+                            }
+
+                            startRobot.textContent = "Sākt robota programmu";
                             break;
                         default:
                             console.log(`Nezināms ziņas tips: ${data.type}`);

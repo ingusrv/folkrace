@@ -392,7 +392,7 @@ robotControlWss.on("connection", (ws) => {
 
             if (robot.websocket.readyState === 3) {
                 robot.connected = false;
-                robot.status = { code: 0, message: "Nav savienots" };
+                robot.status = { code: 0, running: false, message: "Nav savienots" };
 
                 const clientWs = connectedClients[key];
                 if (clientWs) {
@@ -431,18 +431,18 @@ robotControlWss.on("connection", (ws) => {
                 connectedRobots[robot.robotId] = {
                     websocket: ws,
                     connected: true,
-                    status: { code: 1, message: "Savienots" }
+                    status: { code: 1, running: false, message: "Savienots" }
                 };
 
                 ws.send(JSON.stringify({ code: 200, type: "connect", robotId: `${robot.robotId}`, message: "Robots savienots" }))
                 break;
             case "start":
                 console.log("we have received start");
-                connectedRobots[robot.robotId].status = { code: 1, message: "Programma startēta" };
+                connectedRobots[robot.robotId].status = { code: 1, running: true, message: "Programma startēta" };
                 break;
             case "stop":
                 console.log("we have received stop");
-                connectedRobots[robot.robotId].status = { code: 1, message: "Programma apstādināta" };
+                connectedRobots[robot.robotId].status = { code: 1, running: false, message: "Programma apstādināta" };
                 break;
             case "data":
                 console.log("robot data: ", data);
