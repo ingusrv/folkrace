@@ -60,11 +60,6 @@ function loadRobots() {
             delayInput.type = "text";
             delayInput.value = 0;
             delay.append(delayInput);
-            const serverStatus = document.createElement("td");
-            const serverStatusValue = document.createElement("span");
-            serverStatusValue.classList.add("pill", "danger");
-            serverStatusValue.textContent = "Nav savienots";
-            serverStatus.append(serverStatusValue);
             const robotStatus = document.createElement("td");
             const robotStatusValue = document.createElement("span");
             robotStatusValue.classList.add("pill", "danger");
@@ -76,9 +71,6 @@ function loadRobots() {
             const actionsContainer = document.createElement("div");
             actionsContainer.style.width = "max-content";
             const actions = document.createElement("td");
-            const connectToServer = document.createElement("button");
-            connectToServer.classList.add("button", "primary");
-            connectToServer.textContent = "Savienoties";
             const startRobot = document.createElement("button");
             startRobot.classList.add("button", "primary");
             startRobot.textContent = "Sākt robota programmu";
@@ -89,103 +81,10 @@ function loadRobots() {
             deleteRobot.classList.add("button", "danger");
             deleteRobot.textContent = "Izdzēst";
 
-            actionsContainer.append(connectToServer, startRobot, openSettings, deleteRobot);
+            actionsContainer.append(startRobot, openSettings, deleteRobot);
             actions.append(actionsContainer);
 
-            // pārbaudam vai savienojums ar serveri jau izveidots
-            if (openSockets[robot.robotId]) {
-                serverStatusValue.classList.remove("danger");
-                serverStatusValue.classList.add("success");
-                serverStatusValue.textContent = "Savienots";
-                connectToServer.textContent = "Atvienoties";
-            }
-
             // pogu funkcionalitāte
-            let ws = undefined;
-            let connectedToServer = false;
-            let robotRunning = false;
-            connectToServer.addEventListener("click", () => {
-                console.log(openSockets, connectedToServer);
-                if (connectedToServer) {
-                    console.log(`${robot.robotId} socket atvienojas`);
-                    openSockets[robot.robotId].close();
-                    return;
-                }
-
-                ws = openSockets[robot.robotId];
-                if (!ws) {
-                    ws = new WebSocket(`ws://${window.location.host}/api/panel`);
-                }
-
-                ws.addEventListener("open", (e) => {
-                    ws.send(JSON.stringify({ type: "connect", robotId: robot.robotId }));
-                });
-
-                ws.addEventListener("close", (e) => {
-                    delete openSockets[robot.robotId];
-                    connectToServer.textContent = "Savienoties";
-                    connectedToServer = false;
-
-                    serverStatusValue.classList.remove("success");
-                    serverStatusValue.classList.add("danger");
-                    serverStatusValue.textContent = "Nav savienots";
-                });
-
-                ws.addEventListener("message", (e) => {
-                    const data = JSON.parse(e.data);
-                    console.log(data);
-
-                    switch (data.type) {
-                        case "connect":
-                            openSockets[robot.robotId] = ws;
-                            connectToServer.textContent = "Atvienoties";
-                            connectedToServer = true;
-
-                            serverStatusValue.classList.remove("danger");
-                            serverStatusValue.classList.add("success");
-                            serverStatusValue.textContent = data.message;
-
-                            startRobot.addEventListener("click", (e) => {
-                                if (robotRunning) {
-                                    ws.send(JSON.stringify({ robotId: robot.robotId, type: "stop" }));
-                                    return;
-                                }
-
-                                ws.send(JSON.stringify({ robotId: robot.robotId, delay: Number(delayInput.value), type: "start" }));
-                            });
-
-                            break;
-                        case "status":
-                            switch (data.status.code) {
-                                case 0:
-                                    robotStatusValue.classList.remove("success")
-                                    robotStatusValue.classList.add("danger");
-                                    robotStatusValue.textContent = data.status.message;
-                                    break;
-                                case 1:
-                                    robotStatusValue.classList.remove("danger")
-                                    robotStatusValue.classList.add("success");
-                                    robotStatusValue.textContent = data.status.message;
-                                    break;
-                                default:
-                                    console.log(`Nezināms statusa kods: ${data.status.code}`);
-                                    break;
-                            }
-
-                            robotRunning = data.status.running;
-                            if (robotRunning) {
-                                startRobot.textContent = "Beigt robota programmu";
-                                return;
-                            }
-
-                            startRobot.textContent = "Sākt robota programmu";
-                            break;
-                        default:
-                            console.log(`Nezināms ziņas tips: ${data.type}`);
-                            break;
-                    }
-                });
-            });
             openSettings.addEventListener("click", () => { });
             deleteRobot.addEventListener("click", () => {
                 fetch(`/api/robot/${robot.robotId}`, {
@@ -205,7 +104,70 @@ function loadRobots() {
                 });
             });
 
-            row.append(number, robotId, createdAt, key, delay, serverStatus, robotStatus, actions);
+            let ws = openSockets[robot.robotId];;
+            let robotRunning = false;
+
+            if (!ws) {
+                ws = new WebSocket(`ws://${window.location.host}/api/panel`);
+            }
+
+            ws.addEventListener("open", (e) => {
+                ws.send(JSON.stringify({ type: "connect", robotId: robot.robotId }));
+            });
+
+            ws.addEventListener("close", (e) => {
+                delete openSockets[robot.robotId];
+            });
+
+            ws.addEventListener("message", (e) => {
+                const data = JSON.parse(e.data);
+                console.log(data);
+
+                switch (data.type) {
+                    case "connect":
+                        openSockets[robot.robotId] = ws;
+
+                        startRobot.addEventListener("click", (e) => {
+                            if (robotRunning) {
+                                ws.send(JSON.stringify({ robotId: robot.robotId, type: "stop" }));
+                                return;
+                            }
+
+                            ws.send(JSON.stringify({ robotId: robot.robotId, delay: Number(delayInput.value), type: "start" }));
+                        });
+                        break;
+                    case "status":
+                        switch (data.status.code) {
+                            case 0:
+                                robotStatusValue.classList.remove("success")
+                                robotStatusValue.classList.add("danger");
+                                robotStatusValue.textContent = data.status.message;
+                                break;
+                            case 1:
+                                robotStatusValue.classList.remove("danger")
+                                robotStatusValue.classList.add("success");
+                                robotStatusValue.textContent = data.status.message;
+                                break;
+                            default:
+                                console.log(`Nezināms statusa kods: ${data.status.code}`);
+                                break;
+                        }
+
+                        robotRunning = data.status.running;
+                        if (robotRunning) {
+                            startRobot.textContent = "Beigt robota programmu";
+                            return;
+                        }
+
+                        startRobot.textContent = "Sākt robota programmu";
+                        break;
+                    default:
+                        console.log(`Nezināms ziņas tips: ${data.type}`);
+                        break;
+                }
+            });
+
+            row.append(number, robotId, createdAt, key, delay, robotStatus, actions);
             robotTable.appendChild(row);
         });
     });
