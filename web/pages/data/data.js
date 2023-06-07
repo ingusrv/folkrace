@@ -40,7 +40,7 @@ function getData() {
             const elapsedTime = document.createElement("td");
             elapsedTime.textContent = data.elapsedTime;
             const showData = document.createElement("button");
-            showData.classList.add("button", "primary");
+            showData.classList.add("button", "secondary", "on-secondary");
             showData.textContent = "Skatīt";
 
             // pogu funkcionalitāte
@@ -93,8 +93,8 @@ function getData() {
 
         dialog.showModal();
 
-        Chart.defaults.borderColor = "#8c9198";
-        Chart.defaults.color = "#e2e2e5";
+        Chart.defaults.borderColor = "#847e89";
+        Chart.defaults.color = "#f5f5f5";
         const chart = new Chart(ctx, {
             type: 'bar',
             data: {

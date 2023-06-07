@@ -13,25 +13,25 @@
     <title>Robotu saraksts</title>
 </head>
 
-<body>
-    <header>
+<body class="surface on-surface">
+    <header class="surface-container on-surface-container">
         <ul>
             <li><a href="/data/">Braucienu dati</a></li>
             <li><a href="/robots/">Robotu saraksts</a></li>
             <li><a href="/users/">Lietotāji</a></li>
             <li>
                 <span id="username-display">Lietotājvārds</span>
-                <a class="logout" href="/logout">Iziet</a>
+                <a class="button danger on-danger" href="/logout">Iziet</a>
             </li>
         </ul>
     </header>
 
     <main>
         <div class="width-full">
-            <button class="button success" id="add-robot">Pievienot robotu</button>
+            <button class="button primary on-primary" id="add-robot">Pievienot robotu</button>
         </div>
 
-        <div class="panel">
+        <div class="panel surface-container on-surface-container">
             <table class="data-table width-full" id="robot-table">
                 <thead>
                     <tr>

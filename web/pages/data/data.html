@@ -14,41 +14,41 @@
     <title>Braucienu dati</title>
 </head>
 
-<body>
-    <header>
+<body class="surface on-surface">
+    <header class="surface-container on-surface-container">
         <ul>
             <li><a href="/data/">Braucienu dati</a></li>
             <li><a href="/robots/">Robotu saraksts</a></li>
             <li><a href="/users/">Lietotāji</a></li>
             <li>
                 <span id="username-display">Lietotājvārds</span>
-                <a class="logout" href="/logout">Iziet</a>
+                <a class="button danger on-danger" href="/logout">Iziet</a>
             </li>
         </ul>
     </header>
 
     <main>
-        <dialog class="secondary-container width-half" id="chart-dialog">
+        <dialog class="surface-container on-surface-container width-half" id="chart-dialog">
             <h2 class="dialog-title">Datu salīdzinājums</h2>
             <div class="chart-container">
                 <canvas id="comparison-chart"></canvas>
             </div>
             <form method="dialog" id="close-chart-dialog">
-                <button class="button primary">Aizvērt</button>
+                <button class="button primary on-primary" type="submit">Aizvērt</button>
             </form>
         </dialog>
-        <dialog class="secondary-container width-half" id="view-data-dialog">
+        <dialog class="surface-container on-surface-container width-half" id="view-data-dialog">
             <h2 class="dialog-title">No robota saņemtie dati</h2>
             <div id="text-window" class="text-window"></div>
             <form method="dialog" id="close-view-data-dialog">
-                <button class="button primary">Aizvērt</button>
+                <button class="button primary on-primary" type="submit">Aizvērt</button>
             </form>
         </dialog>
 
         <div class="width-full">
-            <button class="button primary compare-data" id="compare-data">salīdzināt</button>
+            <button class="button primary on-primary" id="compare-data">salīdzināt</button>
         </div>
-        <div class="panel">
+        <div class="panel surface-container on-surface-container">
             <table class="data-table width-full" id="data-table">
                 <thead>
                     <tr>

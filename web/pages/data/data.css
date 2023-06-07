@@ -4,13 +4,11 @@ header ul li:nth-child(1) {
 }
 
 .chart-container {
-    background-color: var(--background);
     margin-bottom: 1rem;
 }
 
 .text-window {
-    background-color: var(--surface);
-    color: var(--on-surface);
+    background-color: #171717;
     width: 100%;
     min-height: 25rem;
     overflow-x: scroll;

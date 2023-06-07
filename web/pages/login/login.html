@@ -11,16 +11,17 @@
     <title>Login</title>
 </head>
 
-<body>
-    <div class="login-container">
+<body class="surface on-surface">
+    <div class="login-container surface-container on-surface-container">
         <form action="/login/" method="post">
             <label for="username">Lietotājvārds</label>
-            <input class="input" type="text" name="username" id="username">
+            <input class="input on-surface-container border-on-surface-container" type="text" name="username"
+                id="username">
             <label for="password">Parole</label>
-            <input class="input" type="password" name="password" id="password">
-            <input class="button primary" type="submit" value="Pieslēgties">
+            <input class="input on-surface-container border-on-surface-container" type="password" name="password"
+                id="password">
+            <button class="button primary on-primary" type="submit">Pieslēgties</button>
         </form>
-        <div class="status-message" id="status-message"></div>
     </div>
 </body>
 

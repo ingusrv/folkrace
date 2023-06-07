@@ -32,10 +32,10 @@ function loadUsers() {
             const actions = document.createElement("td");
             const editButton = document.createElement("button");
             editButton.textContent = "Rediģēt";
-            editButton.classList.add("button", "secondary");
+            editButton.classList.add("button", "secondary", "on-secondary");
             const deleteButton = document.createElement("button");
             deleteButton.textContent = "Noņemt";
-            deleteButton.classList.add("button", "danger");
+            deleteButton.classList.add("button", "danger", "on-danger");
 
             actions.append(editButton, deleteButton);
 

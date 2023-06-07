@@ -34,13 +34,14 @@ function loadRobots() {
             keyContainer.style.width = "max-content";
             const key = document.createElement("td");
             const toggleKeyVisibility = document.createElement("button");
-            toggleKeyVisibility.classList.add("none", "text-outline");
+            toggleKeyVisibility.classList.add("none", "text-gray");
+            toggleKeyVisibility.style.cursor = "pointer";
             // kad būs ikonas šis mainīsies
             toggleKeyVisibility.style.fontSize = "2rem";
             toggleKeyVisibility.innerHTML = "&#9788;";
             const keyValue = document.createElement("input");
             keyValue.readOnly = true;
-            keyValue.classList.add("input", "key");
+            keyValue.classList.add("input", "key", "on-surface-container");
             keyValue.type = "password";
             keyValue.value = robot.key;
             toggleKeyVisibility.addEventListener("click", (e) => {
@@ -56,13 +57,13 @@ function loadRobots() {
             key.append(keyContainer);
             const delay = document.createElement("td");
             const delayInput = document.createElement("input");
-            delayInput.classList.add("input", "delay");
+            delayInput.classList.add("input", "delay", "on-surface-container", "border-on-surface-container");
             delayInput.type = "text";
             delayInput.value = 0;
             delay.append(delayInput);
             const robotStatus = document.createElement("td");
             const robotStatusValue = document.createElement("span");
-            robotStatusValue.classList.add("pill", "danger");
+            robotStatusValue.classList.add("pill", "danger", "on-danger");
             robotStatusValue.textContent = "Nav savienots";
             robotStatus.append(robotStatusValue);
 
@@ -72,13 +73,13 @@ function loadRobots() {
             actionsContainer.style.width = "max-content";
             const actions = document.createElement("td");
             const startRobot = document.createElement("button");
-            startRobot.classList.add("button", "primary");
+            startRobot.classList.add("button", "secondary", "on-secondary");
             startRobot.textContent = "Sākt robota programmu";
             const openSettings = document.createElement("button");
-            openSettings.classList.add("button", "secondary");
+            openSettings.classList.add("button", "secondary", "on-secondary");
             openSettings.textContent = "Iestatījumi";
             const deleteRobot = document.createElement("button");
-            deleteRobot.classList.add("button", "danger");
+            deleteRobot.classList.add("button", "danger", "on-danger");
             deleteRobot.textContent = "Izdzēst";
 
             actionsContainer.append(startRobot, openSettings, deleteRobot);
@@ -135,13 +136,13 @@ function loadRobots() {
                     case "status":
                         switch (data.status.code) {
                             case 0:
-                                robotStatusValue.classList.remove("success")
-                                robotStatusValue.classList.add("danger");
+                                robotStatusValue.classList.remove("success", "on-success");
+                                robotStatusValue.classList.add("danger", "on-danger");
                                 robotStatusValue.textContent = data.status.message;
                                 break;
                             case 1:
-                                robotStatusValue.classList.remove("danger")
-                                robotStatusValue.classList.add("success");
+                                robotStatusValue.classList.remove("danger", "on-danger");
+                                robotStatusValue.classList.add("success", "on-success");
                                 robotStatusValue.textContent = data.status.message;
                                 break;
                             default:
