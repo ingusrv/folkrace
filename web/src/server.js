@@ -9,7 +9,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { MongoClient } from "mongodb";
-import { getUser, getUsers, addUser, getDriveData, addDriveData, removeUser, getRobots, addRobot, removeRobot, updateRobotKey, getRobotByKey, getRobotById } from "./db.js";
+import { getUser, getUsers, addUser, getDriveDataByOwner, addDriveData, removeUser, getRobotsByOwner, addRobot, removeRobot, updateRobotKey, getRobotByKey, getRobotById } from "./db.js";
 
 const app = express();
 const DATABASE_URI = process.env.DATABASE_URI;
@@ -125,7 +125,8 @@ app.get("/logout", (req, res) => {
 
 // api
 app.get(`/api/driveData`, async (req, res) => {
-    const data = await getDriveData(mongoClient);
+    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const data = await getDriveDataByOwner(mongoClient, currentUsername);
     res.status(200).json({ data: data });
 });
 
@@ -242,17 +243,19 @@ app.delete(`/api/user/:username`, async (req, res) => {
 });
 
 app.get(`/api/robots`, async (req, res) => {
-    const data = await getRobots(mongoClient);
+    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const data = await getRobotsByOwner(mongoClient, currentUsername);
     res.status(200).json({ data: data });
 });
 
 app.post(`/api/robot`, async (req, res) => {
+    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+
     // TODO: return inserted robot
     const robot = {
         robotId: crypto.randomBytes(2).toString('hex'),
         key: crypto.randomBytes(8).toString('hex'),
-        status: "Bezsaistē",
-        lastUpdated: new Date().toLocaleString(),
+        owner: currentUsername,
         createdAt: new Date().toLocaleString()
     };
 

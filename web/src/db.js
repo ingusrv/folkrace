@@ -60,14 +60,14 @@ export async function addDriveData(client, driveData) {
     return res.insertedId;
 }
 
-export async function getDriveData(client) {
-    const cursor = client.db("folkrace").collection("driveData").find({});
+export async function getDriveDataByOwner(client, username) {
+    const cursor = client.db("folkrace").collection("driveData").find({ owner: username });
     const res = await cursor.toArray();
     return res;
 }
 
-export async function getRobots(client) {
-    const cursor = client.db("folkrace").collection("robots").find({});
+export async function getRobotsByOwner(client, username) {
+    const cursor = client.db("folkrace").collection("robots").find({ owner: username });
     const res = await cursor.toArray();
     return res;
 }
