@@ -18,7 +18,6 @@ __Risinājuma (pagaidu) ierobežojumi:__
 - Brauciena datus nevar izdēst
 - Brauciena datu salīdzināšanai nav iespējas pašam izvēlēties grafika nosaukumu - tiek automātiski izveidots grafika nosaukums no robota nosaukuma un datuma
 - Brauciena datus var salīdzināt tikai pēc vidējā FPS
-- Lietotāju dati nav atsevišķi atdalīti
 - Nav atsevišķas datubāzes priekš izstrādes režīma(dev) un parastā režīma(prod)
 
 __Risinājumā izmantotās tehnoloģijas:__
