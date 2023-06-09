@@ -15,7 +15,10 @@ function getData() {
         console.log(body);
 
         if (Object.entries(body.data).length === 0) {
-            dataTable.textContent = "Nav braucienu datu";
+            const table = dataTable.parentElement;
+            table.replaceChildren();
+            table.style.textAlign = "center";
+            table.textContent = "Nav braucienu datu!";
             return;
         }
 
