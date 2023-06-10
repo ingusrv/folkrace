@@ -5,6 +5,7 @@ const robotTable = document.querySelector("#robot-table").querySelector("tbody")
 const openSockets = {};
 
 function loadRobots() {
+    robotTable.parentElement.querySelector("thead").style.display = "revert";
     robotTable.replaceChildren();
     fetch("/api/robots").then(async (res) => {
         if (res.status >= 400) {
@@ -16,7 +17,9 @@ function loadRobots() {
         console.log(body);
 
         if (Object.entries(body.data).length === 0) {
-            robotTable.textContent = "Nav neviena robota";
+            robotTable.textContent = "Nav neviena robota!";
+            robotTable.style.textAlign = "center";
+            robotTable.parentElement.querySelector("thead").style.display = "none";
             return;
         }
 
