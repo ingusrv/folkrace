@@ -45,10 +45,6 @@ app.use((req, res, next) => {
         next();
         return;
     }
-    if (req.path === `/api/driveData` && req.method === "POST") {
-        next()
-        return;
-    }
     if (!req.cookies.token) {
         res.status(401).redirect("/login");
         return;
@@ -128,26 +124,6 @@ app.get(`/api/driveData`, async (req, res) => {
     const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
     const data = await getDriveDataByOwner(mongoClient, currentUsername);
     res.status(200).json({ data: data });
-});
-
-app.post(`/api/driveData`, async (req, res) => {
-    const data = req.body;
-
-    if (!data.elapsedTime || !data.data || data.data === []) {
-        res.status(400).json({ message: "nepareizi vai trūkstoši dati!" });
-        return;
-    }
-
-    data.createdAt = new Date().toLocaleString();
-    console.log(data);
-    const result = await addDriveData(mongoClient, data);
-
-    if (!result) {
-        res.status(500).json({ message: "radās kļūda!" });
-        return;
-    }
-
-    res.status(201).json({ message: "dati pievienoti veiksmīgi!" });
 });
 
 app.get(`/api/users`, async (req, res) => {
