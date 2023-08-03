@@ -22,8 +22,8 @@ await mongoClient.connect();
 
 app.use(express.json());
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "pages")));
-app.use(favicon(path.join(__dirname, "pages/favicon.ico")));
+app.use(express.static(path.join(__dirname, "public")));
+app.use(favicon(path.join(__dirname, "public/favicon.ico")));
 
 // check if root/default account exists
 const admin = await getUser(mongoClient, process.env.ROOT_USERNAME);
@@ -41,7 +41,7 @@ if (!admin) {
 
 // auth
 app.use((req, res, next) => {
-    if (req.path === "/login/") {
+    if (req.path === "/login") {
         next();
         return;
     }
@@ -50,7 +50,7 @@ app.use((req, res, next) => {
         return;
     }
     if (!req.cookies.token) {
-        res.status(401).redirect("/login/");
+        res.status(401).redirect("/login");
         return;
     }
 
@@ -59,20 +59,20 @@ app.use((req, res, next) => {
         console.log(decoded);
         next();
     } catch (err) {
-        res.status(401).redirect("/login/");
+        res.status(401).redirect("/login");
         console.error(err.message);
     }
 });
 
 app.get("/", (req, res) => {
-    res.redirect("/data/");
+    res.redirect("/data");
 })
 
-app.get("/login/", (req, res) => {
-    res.sendFile(path.join(__dirname, "pages/login/login.html"));
+app.get("/login", (req, res) => {
+    res.sendFile(path.join(__dirname, "pages/login.html"));
 });
 
-app.post("/login/", async (req, res) => {
+app.post("/login", async (req, res) => {
     console.log(JSON.stringify(req.body));
     const user = {
         username: req.body.username,
@@ -105,22 +105,22 @@ app.post("/login/", async (req, res) => {
     });
 });
 
-app.get("/data/", (req, res) => {
-    res.sendFile(path.join(__dirname, "pages/data/data.html"));
+app.get("/data", (req, res) => {
+    res.sendFile(path.join(__dirname, "pages/data.html"));
 });
 
-app.get("/robots/", (req, res) => {
-    res.sendFile(path.join(__dirname, "pages/robots/robots.html"));
+app.get("/robots", (req, res) => {
+    res.sendFile(path.join(__dirname, "pages/robots.html"));
 });
 
-app.get("/users/", (req, res) => {
-    res.sendFile(path.join(__dirname, "pages/users/users.html"));
+app.get("/users", (req, res) => {
+    res.sendFile(path.join(__dirname, "pages/users.html"));
 });
 
 app.get("/logout", (req, res) => {
     // TODO: jwt blacklist for tokens that still work after logout
     res.clearCookie("token");
-    res.redirect("/login/");
+    res.redirect("/login");
 });
 
 // api

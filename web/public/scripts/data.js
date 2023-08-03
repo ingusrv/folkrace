@@ -1,4 +1,4 @@
-import Notification from "../notification.js";
+import Notification from "./notification.js";
 
 const dataTable = document.querySelector("#data-table").querySelector("tbody");
 

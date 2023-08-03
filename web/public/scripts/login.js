@@ -1,4 +1,4 @@
-import Notification from "../notification.js";
+import Notification from "./notification.js";
 
 const form = document.querySelector("form");
 form.addEventListener("submit", (e) => {
@@ -9,7 +9,7 @@ form.addEventListener("submit", (e) => {
         password: form.querySelector("#password").value
     };
 
-    fetch("/login/", {
+    fetch("/login", {
         method: "POST",
         mode: "same-origin",
         headers: {

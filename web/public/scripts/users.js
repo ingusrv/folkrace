@@ -1,4 +1,4 @@
-import Notification from "../notification.js";
+import Notification from "./notification.js";
 
 const addUser = document.querySelector("#add-user");
 const addUserDialog = document.querySelector("#add-user-dialog");

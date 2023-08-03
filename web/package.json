@@ -2,12 +2,12 @@
   "name": "folkrace-frontend",
   "version": "1.0.0",
   "description": "",
-  "main": "src/server.js",
+  "main": "src/app.js",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "ENVIRONMENT=dev nodemon src/server.js",
-    "prod": "ENVIRONMENT=prod node src/server.js"
+    "dev": "ENVIRONMENT=dev nodemon src/app.js",
+    "prod": "ENVIRONMENT=prod node src/app.js"
   },
   "keywords": [],
   "author": "ingusrv",

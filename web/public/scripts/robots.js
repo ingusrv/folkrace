@@ -1,4 +1,4 @@
-import Notification from "../notification.js";
+import Notification from "./notification.js";
 
 const addRobot = document.querySelector("#add-robot");
 const robotTable = document.querySelector("#robot-table").querySelector("tbody");
