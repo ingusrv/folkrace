@@ -9,7 +9,7 @@ form.addEventListener("submit", (e) => {
         password: form.querySelector("#password").value
     };
 
-    fetch("/login", {
+    fetch("/api/auth/login", {
         method: "POST",
         mode: "same-origin",
         headers: {
@@ -21,7 +21,7 @@ form.addEventListener("submit", (e) => {
         console.log(body);
         if (res.status === 200) {
             new Notification({ type: "success", text: body.message });
-            window.location.href = "/data/";
+            window.location.href = "/data";
             return;
         }
 
