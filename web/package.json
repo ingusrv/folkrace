@@ -5,9 +5,8 @@
   "main": "src/app.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "ENVIRONMENT=dev nodemon src/app.js",
-    "prod": "ENVIRONMENT=prod node src/app.js"
+    "start": "node src/app.js",
+    "dev": "nodemon src/app.js"
   },
   "keywords": [],
   "author": "ingusrv",

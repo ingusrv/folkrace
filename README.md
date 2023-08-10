@@ -54,26 +54,26 @@ npm install
 ```
 5. Šajā pašā vietā izveido jaunu failu ar nosaukumu ``.env``
 6. Izveidotajā failā aizpildi šādus mainīgos:
-    - ``DATABASE_URI=`` - Saite, kuru izmanto, lai savienotos ar MongoDb datubāzi
-    - ``ROOT_USERNAME=`` - Galvenā administratora lietotājvārds, ar kuru sākotnēji var ielogoties mājaslapā
-    - ``ROOT_PASSWORD=`` - Galvenā administratora parole, ar kuru sākotnēji var ielogoties mājaslapā
-    - ``PRIVATE_KEY=`` - Atslēga, kuru izmanto, lai autentificētu lietotājus mājaslapā
-    - ``PROD_PORT=`` - Ports, kuru serveris izmanto parastajā izmantošanas jeb "production" režīmā
-    - ``DEV_PORT=`` - Ports, kuru serveris izmanto izstrādes jeb "development" režīmā
+    - ``DATABASE_URI=`` - Saite, kuru izmanto, lai savienotos ar MongoDb datubāzi (Obligāti)
+    - ``ROOT_USERNAME=`` - Galvenā administratora lietotājvārds, ar kuru sākotnēji var ielogoties mājaslapā (Obligāti)
+    - ``ROOT_PASSWORD=`` - Galvenā administratora parole, ar kuru sākotnēji var ielogoties mājaslapā (Obligāti)
+    - ``PRIVATE_KEY=`` - Atslēga, kuru izmanto, lai autentificētu lietotājus mājaslapā (Nav obligāti, bet vēlams iestatīt)
+    - ``PORT=`` - Ports, kuru izmantos serveris (Nav obligāti, bet vēlams iestatīt)
 
 ## Kā palaist risinājuma web daļu:
 1. Terminālī ieraksti šo komandu, lai palaistu risinājumu parastajā izmantošanas režīmā:
 ```
-npm run prod
+npm start
 ```
 Vai šo kommandu lai palaistu izstrādes režīmā:
 ```
 npm run dev
 ```
-2. Ja vēlas pieslēgties mājaslapai no viena un tā paša datora, uz kura risinājums palaists, var uzspiest uz terminālī izvadīto saiti
+2. Ja viss nostrādāja, termiālī parādīsies paziņojums
 ```
-server started at <saite>
+Serveris startēts! Izmantotais ports: <ports>
 ```
+Ja vēlas pieslēgties mājaslapai no viena un tā paša datora, uz kura risinājums palaists, pārlūkā ieraksti `http://localhost:<ports>`, kur `<ports>` vietā ieraksti izmantoto portu.
 
 ## Kā palaist risinājuma robota daļu
 1. Dodies uz ``robots`` folder

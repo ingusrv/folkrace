@@ -13,7 +13,16 @@ import apiRouter from "../routes/api.js";
 import websocketRouter from "../routes/websocket.js";
 
 const app = express();
-const PORT = process.env.ENVIRONMENT === "prod" ? process.env.PROD_PORT : process.env.DEV_PORT;
+const PORT = process.env.PORT || 3000;
+
+if (!process.env.PORT) {
+    console.warn(`Nav iestatīts ports! Tiks izmantota noklusējuma vērtība ${PORT}`);
+}
+
+if (!process.env.PRIVATE_KEY) {
+    console.warn("Nav iestatīts 'PRIVATE_KEY'! Tiks izmantota noklusējuma vērtība 'folkrace'");
+    process.env.PRIVATE_KEY = "folkrace";
+}
 
 const __dirname = path.resolve();
 import { mongoClient } from "./databaseClient.js";
@@ -47,7 +56,7 @@ app.use("/users", usersRouter);
 app.use("/api", apiRouter);
 
 // start server
-const server = app.listen(PORT, () => console.log(`server started at http://localhost:${PORT}`));
+const server = app.listen(PORT, () => console.log(`Serveris startēts! Izmantotais ports:${PORT}`));
 
 // handle websocket upgrade
 server.on("upgrade", websocketRouter);
