@@ -19,7 +19,7 @@ export default async function setupDefaultUser(mongoClient, username, password) 
     }
 
     if (!rootUser && username && password) {
-        console.info("Noklusējuma lietotājs netika atrasts! Tiek izveidots jauns lietotājs no .env faila vērtībām");
+        console.info("Noklusējuma lietotājs netika atrasts! Tiks izveidots jauns lietotājs no .env faila vērtībām...");
         const newRootUser = rootUserTemplate;
         newRootUser.username = username;
         newRootUser.password = await bcrypt.hash(password, SALT_ROUNDS);
@@ -30,7 +30,7 @@ export default async function setupDefaultUser(mongoClient, username, password) 
     }
 
     if (!rootUser && !username && !password) {
-        console.info("Noklusējuma lietotājs nav iestatīts! Tiks automātiski izveidots jauns lietotājs...");
+        console.info("Noklusējuma lietotājs netika atrasts! Tiks automātiski izveidots jauns lietotājs...");
 
         const randomPassword = generateTempPassword(16);
 
@@ -54,9 +54,7 @@ export default async function setupDefaultUser(mongoClient, username, password) 
 
     if (rootUser && password) {
         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-        if (rootUser.password !== hashedPassword) {
-            await updateUserPassword(mongoClient, rootUser._id, hashedPassword);
-            console.info("Noklusējuma parole atjaunināta!");
-        }
+        await updateUserPassword(mongoClient, rootUser._id, hashedPassword);
+        console.info("Noklusējuma parole atjaunināta!");
     }
 }
