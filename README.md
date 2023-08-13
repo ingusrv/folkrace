@@ -52,13 +52,8 @@ __Nepieciešamās Python bibliotēkas priekš robota programmas:__
 ```
 npm install
 ```
-5. Šajā pašā vietā izveido jaunu failu ar nosaukumu ``.env``
-6. Izveidotajā failā aizpildi šādus mainīgos:
-    - ``DATABASE_URI=`` - Saite, kuru izmanto, lai savienotos ar MongoDb datubāzi (Obligāti)
-    - ``ROOT_USERNAME=`` - Galvenā administratora lietotājvārds, ar kuru sākotnēji var ielogoties mājaslapā (Obligāti)
-    - ``ROOT_PASSWORD=`` - Galvenā administratora parole, ar kuru sākotnēji var ielogoties mājaslapā (Obligāti)
-    - ``PRIVATE_KEY=`` - Atslēga, kuru izmanto, lai autentificētu lietotājus mājaslapā (Nav obligāti, bet vēlams iestatīt)
-    - ``PORT=`` - Ports, kuru izmantos serveris (Nav obligāti, bet vēlams iestatīt)
+5. Nokopē ``.env.example`` un pārdēvē uz ``.env``
+6. Aizpildi nepieciešamos mainīgos šajā failā
 
 ## Kā palaist risinājuma web daļu:
 1. Terminālī ieraksti šo komandu, lai palaistu risinājumu parastajā izmantošanas režīmā:
