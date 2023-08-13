@@ -53,7 +53,7 @@ export default async function setupDefaultUser(mongoClient, username, password) 
     }
 
     if (rootUser && password) {
-        bcrypt.compare("test", "test").then(async (result) => {
+        bcrypt.compare(password, rootUser.password).then(async (result) => {
             if (result) {
                 const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
                 await updateUserPassword(mongoClient, rootUser._id, hashedPassword);

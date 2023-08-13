@@ -8,7 +8,7 @@ export function getMongoInstance() {
     return _mongoClient;
 }
 
-export function initMongoDb(connectionString, callback) {
+export function initMongoDb(connectionString) {
     return new Promise((resolve, reject) => {
         if (_mongoClient) {
             reject("Datubāze jau ir savienota!");
