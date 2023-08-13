@@ -66,7 +66,7 @@ npm run dev
 ```
 2. Ja viss nostrādāja, termiālī parādīsies paziņojums
 ```
-Serveris startēts! Izmantotais ports: <ports>
+Serveris darbojas portā <ports>
 ```
 Ja vēlas pieslēgties mājaslapai no viena un tā paša datora, uz kura risinājums palaists, pārlūkā ieraksti `http://localhost:<ports>`, kur `<ports>` vietā ieraksti izmantoto portu.
 

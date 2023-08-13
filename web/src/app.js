@@ -44,7 +44,7 @@ app.use("/api", apiRouter);
 
 initMongoDb(MONGO_URI).then((mongoClient) => {
     setupDefaultUser(mongoClient, ROOT_USERNAME, ROOT_PASSWORD);
-    const server = app.listen(PORT, () => console.log(`Serveris startēts! Izmantotais ports:${PORT}`));
+    const server = app.listen(PORT, () => console.log(`Serveris darbojas portā ${PORT}`));
     server.on("upgrade", websocketRouter);
 }).catch((err) => {
     console.error(err)
