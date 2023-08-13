@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
 import generateTempPassword from "./generateTempPassword.js";
-import { getRootUser, addUser, updateUserUsername, updateUserPassword } from "./db.js";
+import { getRootUser, addUser, updateUserUsername, updateUserPassword } from "./databaseMethods.js";
 
 const SALT_ROUNDS = 12;
 const rootUserTemplate = {

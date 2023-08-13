@@ -3,6 +3,9 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import favicon from "serve-favicon";
 import path from "path";
+import verifyToken from "./verifyToken.js";
+import { initMongoDb } from "./database.js";
+import setupDefaultUser from "./defaultUser.js";
 
 import authRouter from "../routes/auth.js";
 import loginRouter from "../routes/login.js";
@@ -25,19 +28,13 @@ if (!process.env.PRIVATE_KEY) {
 }
 
 const __dirname = path.resolve();
-import { mongoClient } from "./databaseClient.js";
 
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 app.use(favicon(path.join(__dirname, "public/favicon.ico")));
 
-// setup default account
-import setupDefaultUser from "./defaultUser.js";
-setupDefaultUser(mongoClient, process.env.ROOT_USERNAME, process.env.ROOT_PASSWORD);
-
 // auth
-import verifyToken from "./verifyToken.js";
 app.use(verifyToken);
 
 // auth routes
@@ -55,8 +52,10 @@ app.use("/users", usersRouter);
 // api routes
 app.use("/api", apiRouter);
 
-// start server
-const server = app.listen(PORT, () => console.log(`Serveris startēts! Izmantotais ports:${PORT}`));
-
-// handle websocket upgrade
-server.on("upgrade", websocketRouter);
+initMongoDb(process.env.DATABASE_URI).then((mongoClient) => {
+    setupDefaultUser(mongoClient, process.env.ROOT_USERNAME, process.env.ROOT_PASSWORD);
+    const server = app.listen(PORT, () => console.log(`Serveris startēts! Izmantotais ports:${PORT}`));
+    server.on("upgrade", websocketRouter);
+}).catch((err) => {
+    console.error(err)
+});

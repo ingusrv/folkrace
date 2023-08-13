@@ -2,19 +2,21 @@ import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
-import { mongoClient } from "../src/databaseClient.js";
-import { getUser, getUsers, addUser, getDriveDataByOwner, removeUser, getRobotsByOwner, addRobot, removeRobot, updateRobotKey } from "../src/db.js";
+import { getMongoInstance } from "../src/database.js";
+import { getUser, getUsers, addUser, getDriveDataByOwner, removeUser, getRobotsByOwner, addRobot, removeRobot, updateRobotKey } from "../src/databaseMethods.js";
 const router = express.Router();
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 const SALT_ROUNDS = 12;
 
 router.get(`/driveData`, async (req, res) => {
     const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const mongoClient = getMongoInstance();
     const data = await getDriveDataByOwner(mongoClient, currentUsername);
     res.status(200).json({ data: data });
 });
 
 router.get(`/users`, async (req, res) => {
+    const mongoClient = getMongoInstance();
     const data = await getUsers(mongoClient);
     data.forEach(item => {
         delete item.password;
@@ -41,6 +43,7 @@ router.post(`/user`, async (req, res) => {
     }
 
     const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const mongoClient = getMongoInstance();
     const currentUserFromDb = await getUser(mongoClient, currentUsername);
     if (currentUserFromDb.admin === false) {
         res.status(403).json({ message: "nevar izveidot kontu!" });
@@ -88,6 +91,7 @@ router.delete(`/user/:username`, async (req, res) => {
         return;
     }
 
+    const mongoClient = getMongoInstance();
     const userFromDb = await getUser(mongoClient, username);
     if (!userFromDb) {
         res.status(404).json({ message: "lieotājs netika atrasts!" });
@@ -108,6 +112,7 @@ router.delete(`/user/:username`, async (req, res) => {
 
 router.get(`/robots`, async (req, res) => {
     const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const mongoClient = getMongoInstance();
     const data = await getRobotsByOwner(mongoClient, currentUsername);
     res.status(200).json({ data: data });
 });
@@ -123,6 +128,7 @@ router.post(`/robot`, async (req, res) => {
         createdAt: new Date().toLocaleString()
     };
 
+    const mongoClient = getMongoInstance();
     const result = await addRobot(mongoClient, robot);
 
     if (!result) {
@@ -141,6 +147,7 @@ router.delete(`/robot/:robotId`, async (req, res) => {
         return;
     }
 
+    const mongoClient = getMongoInstance();
     const result = await removeRobot(mongoClient, robotId);
     if (result === 0) {
         res.status(404).json({ message: "robots netika atrasts!" });
@@ -158,6 +165,7 @@ router.post(`/robotToken/:robotId`, async (req, res) => {
         return;
     }
 
+    const mongoClient = getMongoInstance();
     const result = await updateRobotKey(mongoClient, robotId, crypto.randomBytes(8).toString('hex'));
     if (result === 0) {
         res.status(404).json({ message: "robots netika atrasts!" });

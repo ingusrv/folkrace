@@ -1,8 +1,8 @@
 import express from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import { getUser } from "../src/db.js";
-import { mongoClient } from "../src/databaseClient.js";
+import { getUser } from "../src/databaseMethods.js";
+import { getMongoInstance } from "../src/database.js";
 const router = express.Router();
 
 router.post("/login", async (req, res) => {
@@ -12,6 +12,7 @@ router.post("/login", async (req, res) => {
         password: req.body.password
     };
 
+    const mongoClient = getMongoInstance();
     const userFromDb = await getUser(mongoClient, user.username);
     if (!userFromDb) {
         res.status(400).json({ message: "nepareizs lietotājvārds!" });

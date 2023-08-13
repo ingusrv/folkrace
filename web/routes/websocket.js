@@ -1,7 +1,6 @@
-import { addDriveData, getRobotByKey, getRobotById } from "../src/db.js";
+import { addDriveData, getRobotByKey, getRobotById } from "../src/databaseMethods.js";
 import { WebSocketServer } from "ws";
-
-import { mongoClient } from "../src/databaseClient.js";
+import { getMongoInstance } from "../src/database.js";
 
 export default function websocketRouter(req, socket, head) {
     const pathname = req.url;
@@ -37,6 +36,7 @@ robotPanelWss.on("connection", (ws) => {
             return;
         }
 
+        const mongoClient = getMongoInstance();
         const robot = await getRobotById(mongoClient, data.robotId);
 
         if (!robot) {
@@ -208,6 +208,7 @@ robotControlWss.on("connection", (ws) => {
                     result.data = [];
                 }
 
+                const mongoClient = getMongoInstance();
                 addDriveData(mongoClient, result).then((res) => {
                     if (!res) {
                         console.log("Robota dati netika veiksmīgi saglabāti");
