@@ -1,8 +1,8 @@
+import { SALT_ROUNDS } from "./config.js";
 import bcrypt from "bcrypt";
 import generateTempPassword from "./generateTempPassword.js";
 import { getRootUser, addUser, updateUserUsername, updateUserPassword } from "./databaseMethods.js";
 
-const SALT_ROUNDS = 12;
 const rootUserTemplate = {
     username: undefined,
     password: undefined,

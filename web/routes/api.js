@@ -1,3 +1,4 @@
+import { TOKEN_SECRET, SALT_ROUNDS } from "../src/config.js";
 import express from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
@@ -5,11 +6,9 @@ import crypto from "crypto";
 import { getMongoInstance } from "../src/database.js";
 import { getUser, getUsers, addUser, getDriveDataByOwner, removeUser, getRobotsByOwner, addRobot, removeRobot, updateRobotKey } from "../src/databaseMethods.js";
 const router = express.Router();
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
-const SALT_ROUNDS = 12;
 
 router.get(`/driveData`, async (req, res) => {
-    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const currentUsername = jwt.verify(req.cookies.token, TOKEN_SECRET).user;
     const mongoClient = getMongoInstance();
     const data = await getDriveDataByOwner(mongoClient, currentUsername);
     res.status(200).json({ data: data });
@@ -28,7 +27,7 @@ router.get(`/users`, async (req, res) => {
 router.get(`/user`, async (req, res) => {
     // const data = await getUsers(client);
     const data = {
-        username: jwt.verify(req.cookies.token, PRIVATE_KEY).user
+        username: jwt.verify(req.cookies.token, TOKEN_SECRET).user
     };
     res.status(200).json(data);
 });
@@ -42,7 +41,7 @@ router.post(`/user`, async (req, res) => {
         return;
     }
 
-    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const currentUsername = jwt.verify(req.cookies.token, TOKEN_SECRET).user;
     const mongoClient = getMongoInstance();
     const currentUserFromDb = await getUser(mongoClient, currentUsername);
     if (currentUserFromDb.admin === false) {
@@ -98,7 +97,7 @@ router.delete(`/user/:username`, async (req, res) => {
         return;
     }
 
-    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const currentUsername = jwt.verify(req.cookies.token, TOKEN_SECRET).user;
     const currentUserFromDb = await getUser(mongoClient, currentUsername);
     if (userFromDb.admin === true && currentUserFromDb.admin === false) {
         res.status(403).json({ message: "nevar noņemt kontu!" });
@@ -111,14 +110,14 @@ router.delete(`/user/:username`, async (req, res) => {
 });
 
 router.get(`/robots`, async (req, res) => {
-    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const currentUsername = jwt.verify(req.cookies.token, TOKEN_SECRET).user;
     const mongoClient = getMongoInstance();
     const data = await getRobotsByOwner(mongoClient, currentUsername);
     res.status(200).json({ data: data });
 });
 
 router.post(`/robot`, async (req, res) => {
-    const currentUsername = jwt.verify(req.cookies.token, PRIVATE_KEY).user;
+    const currentUsername = jwt.verify(req.cookies.token, TOKEN_SECRET).user;
 
     // TODO: return inserted robot
     const robot = {

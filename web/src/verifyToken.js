@@ -1,5 +1,5 @@
+import { TOKEN_SECRET } from "./config.js";
 import jwt from "jsonwebtoken";
-const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
 export default function verifyToken(req, res, next) {
     console.log("verifying token");
@@ -21,7 +21,7 @@ export default function verifyToken(req, res, next) {
     }
 
     try {
-        const decoded = jwt.verify(req.cookies.token, PRIVATE_KEY);
+        const decoded = jwt.verify(req.cookies.token, TOKEN_SECRET);
         console.log("token verified", decoded);
         next();
     } catch (err) {

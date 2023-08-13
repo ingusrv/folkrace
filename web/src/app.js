@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { PORT, MONGO_URI, ROOT_USERNAME, ROOT_PASSWORD } from "./config.js";
 import express from "express";
 import cookieParser from "cookie-parser";
 import favicon from "serve-favicon";
@@ -16,17 +17,6 @@ import apiRouter from "../routes/api.js";
 import websocketRouter from "../routes/websocket.js";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-if (!process.env.PORT) {
-    console.warn(`Nav iestatīts ports! Tiks izmantota noklusējuma vērtība ${PORT}`);
-}
-
-if (!process.env.PRIVATE_KEY) {
-    console.warn("Nav iestatīts 'PRIVATE_KEY'! Tiks izmantota noklusējuma vērtība 'folkrace'");
-    process.env.PRIVATE_KEY = "folkrace";
-}
-
 const __dirname = path.resolve();
 
 app.use(express.json());
@@ -52,8 +42,8 @@ app.use("/users", usersRouter);
 // api routes
 app.use("/api", apiRouter);
 
-initMongoDb(process.env.DATABASE_URI).then((mongoClient) => {
-    setupDefaultUser(mongoClient, process.env.ROOT_USERNAME, process.env.ROOT_PASSWORD);
+initMongoDb(MONGO_URI).then((mongoClient) => {
+    setupDefaultUser(mongoClient, ROOT_USERNAME, ROOT_PASSWORD);
     const server = app.listen(PORT, () => console.log(`Serveris startēts! Izmantotais ports:${PORT}`));
     server.on("upgrade", websocketRouter);
 }).catch((err) => {
