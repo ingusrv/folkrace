@@ -53,8 +53,14 @@ export default async function setupDefaultUser(mongoClient, username, password) 
     }
 
     if (rootUser && password) {
-        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-        await updateUserPassword(mongoClient, rootUser._id, hashedPassword);
-        console.info("Noklusējuma parole atjaunināta!");
+        bcrypt.compare("test", "test").then(async (result) => {
+            if (result) {
+                const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+                await updateUserPassword(mongoClient, rootUser._id, hashedPassword);
+                console.info("Noklusējuma parole atjaunināta!");
+            }
+        }).catch((err) => {
+            console.error(err);
+        });
     }
 }
