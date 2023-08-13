@@ -1,17 +1,22 @@
 import { MongoClient } from "mongodb";
 
-async function listDatabases(client) {
-    const databaseList = await client.db().admin().listDatabases();
-    console.log("Databases:");
-    databaseList.databases.forEach(element => {
-        console.log(element.name);
-    });
+export async function getRootUser(client) {
+    const res = await client.db("folkrace").collection("users").findOne({ root: true });
+    return res;
 }
 
 export async function addUser(client, user) {
     const res = await client.db("folkrace").collection("users").insertOne(user);
     console.log(`user ${user.username} added with id ${res.insertedId}`);
     return res.insertedId;
+}
+
+export async function updateUserUsername(client, userId, username) {
+    await client.db("folkrace").collection("users").updateOne({ _id: userId }, { $set: { username: username } });
+}
+
+export async function updateUserPassword(client, userId, hashedPassword) {
+    await client.db("folkrace").collection("users").updateOne({ _id: userId }, { $set: { password: hashedPassword } });
 }
 
 async function addMultipleUsers(client, users) {

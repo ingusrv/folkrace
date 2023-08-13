@@ -1,17 +1,62 @@
 import bcrypt from "bcrypt";
-import { getUser, addUser } from "./db.js";
+import generateTempPassword from "./generateTempPassword.js";
+import { getRootUser, addUser, updateUserUsername, updateUserPassword } from "./db.js";
+
+const SALT_ROUNDS = 12;
+const rootUserTemplate = {
+    username: undefined,
+    password: undefined,
+    root: true,
+    admin: true,
+    createdAt: undefined
+}
 
 export default async function setupDefaultUser(mongoClient, username, password) {
-    const admin = await getUser(mongoClient, process.env.ROOT_USERNAME);
-    if (!admin) {
-        console.log("No default account found, creating new");
-        const adminUser = {
-            username: username,
-            password: await bcrypt.hash(password, SALT_ROUNDS),
-            root: true,
-            admin: true,
-            createdAt: new Date().toLocaleString("lv")
-        };
-        await addUser(mongoClient, adminUser);
+    const rootUser = await getRootUser(mongoClient);
+
+    if (rootUser && !username && !password) {
+        return;
+    }
+
+    if (!rootUser && username && password) {
+        console.info("Noklusējuma lietotājs netika atrasts! Tiek izveidots jauns lietotājs no .env faila vērtībām");
+        const newRootUser = rootUserTemplate;
+        newRootUser.username = username;
+        newRootUser.password = await bcrypt.hash(password, SALT_ROUNDS);
+        newRootUser.createdAt = new Date().toLocaleString("lv");
+
+        await addUser(mongoClient, newRootUser);
+        return;
+    }
+
+    if (!rootUser && !username && !password) {
+        console.info("Noklusējuma lietotājs nav iestatīts! Tiks automātiski izveidots jauns lietotājs...");
+
+        const randomPassword = generateTempPassword(16);
+
+        const newRootUser = rootUserTemplate;
+        newRootUser.username = "root";
+        newRootUser.password = await bcrypt.hash(randomPassword, SALT_ROUNDS);
+        newRootUser.createdAt = new Date().toLocaleString("lv");
+
+        await addUser(mongoClient, newRootUser);
+
+        console.info(`Noklusējuma lietotājvārds: root\nNoklusējuma Parole: ${randomPassword}`);
+        return;
+    }
+
+    if (rootUser && username) {
+        if (rootUser.username !== username) {
+            await updateUserUsername(mongoClient, rootUser._id, username);
+            console.info("Noklusējuma lietotājvārds atjaunināts!");
+        }
+    }
+
+    if (rootUser && password) {
+        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+        if (rootUser.password !== hashedPassword) {
+            await updateUserPassword(mongoClient, rootUser._id, hashedPassword);
+            console.info("Noklusējuma parole atjaunināta!");
+        }
     }
 }
