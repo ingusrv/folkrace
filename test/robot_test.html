@@ -16,47 +16,49 @@
 </head>
 
 <body>
-    <h1>Robot test</h1>
+    <h1>Robota websocket tests</h1>
 
-    <label for="key">Savienošanās atslēga</label>
-    <input id="key" type="text">
+    <label for="port">Ports</label>
+    <input id="port" type="number" value="3000">
+    <label for="token">Savienošanās atslēga</label>
+    <input id="token" type="text">
 
     <button id="connect">Savienoties</button>
     <button id="disconnect">Atvienoties</button>
 
     <p id="robotId"></p>
-    <p id="status"></p>
+    Saņemtie dati:
+    <p id="log"></p>
 
     <script>
         const connectButton = document.querySelector("#connect");
         const disconnectButton = document.querySelector("#disconnect");
         const robotIdEl = document.querySelector("#robotId");
-        const statusEl = document.querySelector("#status");
-        const keyEl = document.querySelector("#key");
-        const key = keyEl.value;
+        const logEl = document.querySelector("#log");
+        const tokenEl = document.querySelector("#token");
+        const portEl = document.querySelector("#port");
 
         connectButton.addEventListener("click", () => {
-            let ws = new WebSocket("ws://localhost:3000/api/robot");
+            const port = portEl.value;
+            const token = tokenEl.value;
+            let ws = new WebSocket(`ws://localhost:${port || 3000}/robot?token=${token}`);
 
             ws.addEventListener("open", (e) => {
                 console.log("savienojums atvērts");
-                ws.send(JSON.stringify({ type: "connect", key: key }));
+                logEl.innerText = "savienojums atvērts";
             });
 
             ws.addEventListener("message", (e) => {
                 const data = JSON.parse(e.data);
                 console.log("saņēmām", data);
-                statusEl.innerText = `saņēmām: ${JSON.stringify(data)}`;
+                logEl.innerText += `\n${JSON.stringify(data)}`;
 
                 switch (data.type) {
-                    case "connect":
-                        robotIdEl.innerText = `Robota id: ${data.robotId}`;
+                    case 1:
+                        ws.send(JSON.stringify({ type: 1 }));
                         break;
-                    case "start":
-                        ws.send(JSON.stringify({ code: 200, type: "start", key: key, message: "Programma startēta" }));
-                        break;
-                    case "stop":
-                        ws.send(JSON.stringify({ code: 200, type: "stop", key: key, message: "Programma apstādināta" }));
+                    case 2:
+                        ws.send(JSON.stringify({ type: 2 }));
                         break;
                     default:
                         console.log("nezinam tādu ziņas tipu")
@@ -66,7 +68,7 @@
 
             ws.addEventListener("close", (e) => {
                 console.log("savienojums aizvērts");
-                statusEl.innerText = "savienojums aizvērts";
+                logEl.innerText = "savienojums aizvērts";
             });
 
             disconnectButton.addEventListener("click", () => {

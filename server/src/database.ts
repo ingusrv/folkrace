@@ -1,14 +1,14 @@
 import { MongoClient } from "mongodb";
 import assert from "assert";
 
-let _mongoClient = undefined;
+let _mongoClient: MongoClient;
 
-export function getMongoInstance() {
+export function getMongoInstance(): MongoClient {
     assert.ok(_mongoClient, "Datubāze nav savienota!");
     return _mongoClient;
 }
 
-export function initMongoDb(connectionString) {
+export function initMongoDb(connectionString: string): Promise<MongoClient> {
     return new Promise((resolve, reject) => {
         if (_mongoClient) {
             reject("Datubāze jau ir savienota!");
