@@ -42,7 +42,6 @@ userWss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     connectedUsers.set(user._id.toString(), ws);
 
     console.log(`lietotājs ${user.username} (${user._id}) pieslēdzās pie websocket`);
-    ws.send("test");
 
     ws.on("message", async (e) => {
         const data = JSON.parse(e.toString("utf8"));

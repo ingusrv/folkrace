@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { SERVER_PORT, MONGO_URI } from "./config.js";
 import express from "express";
+import cors from "cors";
 import { initMongoDb } from "./database.js";
 import setupDefaultUser from "./defaultUser.js";
 
@@ -10,6 +11,7 @@ import websocketRouter from "./routes/websocket.js";
 
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 
 app.use("/auth", authRouter);
