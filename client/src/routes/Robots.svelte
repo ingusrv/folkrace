@@ -10,6 +10,8 @@
 
   let token = $auth.user.token;
   let robots: Robot[] = [];
+  let websocket_opened = false;
+  let robots_loaded = false;
 
   fetch(`${API_URL}/robots`, {
     method: "get",
@@ -23,14 +25,9 @@
       data.forEach((r: Robot) => {
         r.delay = 0;
         r.state = RobotState.disconnected;
-        ws.send(
-          JSON.stringify({
-            type: MessageType.status,
-            robotId: r._id,
-          }),
-        );
       });
       robots = data;
+      robots_loaded = true;
     });
 
   function getStatusMessage(state: RobotState) {
@@ -51,6 +48,7 @@
   const ws = new WebSocket(`${API_URL}/user?token=${token}`);
   ws.addEventListener("open", (e) => {
     console.log("ws opened");
+    websocket_opened = true;
   });
 
   ws.addEventListener("message", (e) => {
@@ -94,6 +92,19 @@
       );
     }
     robots = robots;
+  }
+
+  $: if (websocket_opened && robots_loaded) queryRobotStatus();
+  function queryRobotStatus() {
+    robots.forEach((r: Robot) => {
+      console.log(r.name);
+      ws.send(
+        JSON.stringify({
+          type: MessageType.status,
+          robotId: r._id,
+        }),
+      );
+    });
   }
 </script>
 
