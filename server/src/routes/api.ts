@@ -14,6 +14,7 @@ import { generateToken } from "../utils.js";
 const router = express.Router();
 
 router.get(`/driveData`, authorize, async (req, res) => {
+    console.log(`GET /driveData no ${req.res.locals.user.username} (${res.locals.user._id})`);
     const mongoClient = getMongoInstance();
     const driveData = await getDriveDataByOwner(mongoClient, res.locals.user._id);
     res.status(200).json(driveData);
@@ -26,6 +27,7 @@ router.delete(`/driveData/:id`, authorize, async (req, res) => {
         return;
     }
 
+    console.log(`DELETE /driveData no ${req.res.locals.user.username} (${res.locals.user._id})`);
     const mongoclient = getMongoInstance();
     const success = await removeDriveData(mongoclient, res.locals.user._id, new ObjectId(id));
 
@@ -39,6 +41,7 @@ router.delete(`/driveData/:id`, authorize, async (req, res) => {
 });
 
 router.get(`/robots`, authorize, async (req, res) => {
+    console.log(`GET /robots no ${req.res.locals.user.username} (${res.locals.user._id})`);
     const mongoClient = getMongoInstance();
     const robots = await getRobotsByOwner(mongoClient, res.locals.user._id);
     res.status(200).json(robots);
@@ -50,6 +53,8 @@ router.post(`/robot`, authorize, async (req, res) => {
         return;
     }
 
+
+    console.log(`POST /robot no ${req.res.locals.user.username} (${res.locals.user._id})`);
     const mongoClient = getMongoInstance();
     const robot = await addRobot(mongoClient, {
         ownerId: res.locals.user._id,
@@ -72,6 +77,7 @@ router.delete(`/robot/:id`, authorize, async (req, res) => {
         return;
     }
 
+    console.log(`DELETE /robot no ${req.res.locals.user.username} (${res.locals.user._id})`);
     const mongoClient = getMongoInstance();
     const success = await removeRobot(mongoClient, res.locals.user._id, new ObjectId(id));
 
@@ -90,6 +96,7 @@ router.get(`/robot/token/:id`, authorize, async (req, res) => {
         return;
     }
 
+    console.log(`GET /robot/token no ${req.res.locals.user.username} (${res.locals.user._id})`);
     const mongoClient = getMongoInstance();
     const token = generateToken();
     const success = await setRobotToken(mongoClient, res.locals.user._id, new ObjectId(id), token);
@@ -107,6 +114,7 @@ router.get(`/users`, authorize, async (req, res) => {
         return;
     }
 
+    console.log(`GET /users no ${req.res.locals.user.username} (${res.locals.user._id})`);
     const mongoClient = getMongoInstance();
     const users = await getAllUsers(mongoClient);
     // nesūtam paroli un token
@@ -118,6 +126,7 @@ router.get(`/users`, authorize, async (req, res) => {
 });
 
 router.post(`/user`, authorize, async (req, res) => {
+    console.log(`POST /user no ${req.res.locals.user.username} (${res.locals.user._id})`);
     if (res.locals.user.role !== Role.admin && res.locals.user.role !== Role.default) {
         res.status(403).json({ message: "nevar izveidot kontu!" });
         return;
@@ -160,6 +169,7 @@ router.delete(`/user/:id`, authorize, async (req, res) => {
         return;
     }
 
+    console.log(`DELETE /user no ${req.res.locals.user.username} (${res.locals.user._id})`);
     if (res.locals.user.role !== Role.admin && res.locals.user.role !== Role.default) {
         res.status(403).json({ message: "lietotājs nav autorizēts lai dzēstu kontus" });
         return;

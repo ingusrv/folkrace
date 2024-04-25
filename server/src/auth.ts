@@ -14,6 +14,7 @@ export default async function authorize(req: Request, res: Response, next: NextF
 
     if (!token) {
         res.status(401).json({ message: "nav autorizācijas atslēga" });
+        console.log(`lietotājs no ${req.headers.host} centās pieslēgties bez atslēgas`);
         return;
     }
 
@@ -21,10 +22,10 @@ export default async function authorize(req: Request, res: Response, next: NextF
     const user = await getUserByToken(mongoClient, token);
     if (!user) {
         res.status(401).json({ message: "nederīga autorizācijas atslēga" });
+        console.log(`neizdevās autorizēt lietotāju no ${req.headers.host} atslēga: ${token}`);
         return;
     }
 
-    console.log(`${user.username} (${user._id}) autorizēts`);
     res.locals.user = user;
     next();
 }

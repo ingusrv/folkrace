@@ -45,6 +45,7 @@ userWss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
 
     ws.on("message", async (e) => {
         const data = JSON.parse(e.toString("utf8"));
+        console.log(`lietotājs ${user.username} (${user._id}) atsūtīja:`, data);
         const robot = connectedRobots.get(data.robotId.toString());
 
         switch (data.type) {
@@ -57,7 +58,7 @@ userWss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
                     return;
                 }
 
-                if (!data.delay) {
+                if (!data.delay || data.delay < 0) {
                     data.delay = 0;
                 }
 
