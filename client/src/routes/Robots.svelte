@@ -5,6 +5,7 @@
   import { MessageType, RobotState } from "../types";
   import { auth } from "../stores";
   import { onMount } from "svelte";
+  import RobotEntry from "../lib/RobotEntry.svelte";
 
   onMount(() => console.log("robots mounted"));
 
@@ -129,70 +130,9 @@
       </thead>
       <tbody>
         {#each robots as robot, i}
-          <tr>
-            <td>{i + 1}</td>
-            <td>{robot.name}</td>
-            <td>{new Date(robot.createdAt).toLocaleString("lv")}</td>
-            <td>
-              <button
-                class="button secondary on-secondary"
-                on:click={() => navigator.clipboard.writeText(robot.token)}
-              >
-                kopēt
-              </button>
-              <!--<HiddenInput token={robot.token} />-->
-            </td>
-            <td>
-              <span
-                class="pill status"
-                class:online={robot.state === RobotState.connected ||
-                  robot.state === RobotState.running}
-              >
-                {getStatusMessage(robot.state)}
-              </span>
-            </td>
-            <td>
-              <input
-                type="number"
-                class="input surface-container on-surface-container delay"
-                bind:value={robot.delay}
-              />
-            </td>
-            <td>
-              <div class="actions-container">
-                <button
-                  class="button secondary on-secondary"
-                  on:click={() => toggleRobotProgram(robot)}
-                >
-                  {robot.state === RobotState.running
-                    ? "Beigt robota programmu"
-                    : "Sākt robota programmu"}
-                </button>
-                <button class="button secondary on-secondary"
-                  >Iestatījumi</button
-                >
-                <button class="button danger on-danger">Izdzēst</button>
-              </div>
-            </td>
-          </tr>
+          <RobotEntry number={i + 1} {robot} {ws} />
         {/each}
       </tbody>
     </table>
   </div>
 </main>
-
-<style>
-  .status {
-    background-color: var(--danger);
-    color: var(--on-danger);
-  }
-
-  .online {
-    background-color: var(--success);
-    color: var(--on-success);
-  }
-
-  .delay {
-    width: 3rem;
-  }
-</style>
