@@ -132,9 +132,10 @@ void loop() {
         obstacle_detected = false;
       }
 
-      // Throttle control: use straight_throttle if dist_front > dist_far,
+      // Throttle control: use straight_throttle if dist_front < dist_far,
       // otherwise base_throttle
-      if (state.dist_far > 0 && state.dist_front > state.dist_far) {
+      // sharp ir sensors: higher value = closer to obstacle.
+      if (state.dist_far > 0 && state.dist_front < state.dist_far) {
         state.target_throttle = state.straight_throttle;
       } else {
         state.target_throttle = state.base_throttle;
@@ -197,7 +198,7 @@ void loop() {
       }
 
       steer_servo.write(servo_deg);
-      drive_motor.write(static_cast<int>(state.current_throttle));
+      drive_motor.write(state.current_throttle);
     }
   }
 

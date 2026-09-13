@@ -8,7 +8,7 @@ public:
 
   void init();
   void writeMicroseconds(uint16_t us);
-  void write(int percent); // -100 (full reverse) to +100 (full forward), 0 is neutral
+  void write(float throttle); // -1.0f (full reverse) to +1.0f (full forward), 0.0f is neutral
   void stop();
 
 private:

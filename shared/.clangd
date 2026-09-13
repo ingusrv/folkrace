@@ -1,20 +1,5 @@
 CompileFlags:
   CompilationDatabase: ../sniegbaltite
-  Add:
-    - -isystem
-    - /home/ingus/.platformio/packages/toolchain-riscv32-esp/riscv32-esp-elf/include/c++/14.2.0
-    - -isystem
-    - /home/ingus/.platformio/packages/toolchain-riscv32-esp/riscv32-esp-elf/include/c++/14.2.0/riscv32-esp-elf
-    - -isystem
-    - /home/ingus/.platformio/packages/toolchain-riscv32-esp/riscv32-esp-elf/include/c++/14.2.0/backward
-    - -isystem
-    - /home/ingus/.platformio/packages/toolchain-riscv32-esp/lib/gcc/riscv32-esp-elf/14.2.0/include
-    - -isystem
-    - /home/ingus/.platformio/packages/toolchain-riscv32-esp/lib/gcc/riscv32-esp-elf/14.2.0/include-fixed
-    - -isystem
-    - /home/ingus/.platformio/packages/toolchain-riscv32-esp/riscv32-esp-elf/sys-include
-    - -isystem
-    - /home/ingus/.platformio/packages/toolchain-riscv32-esp/riscv32-esp-elf/include
   Remove:
     - -fno-tree-switch-conversion
     - -fstrict-volatile-bitfields

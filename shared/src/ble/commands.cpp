@@ -71,9 +71,17 @@ void cmd_k(char *args) {
   }
 }
 
+static inline float parse_throttle_arg(const char *str) {
+  float v = atoff(str);
+  if (v > 1.0f || v < -1.0f) {
+    v /= 100.0f;
+  }
+  return v;
+}
+
 void cmd_speed(char *args) {
   if (args == nullptr || *args == '\0') {
-    notify("throttle base %.1f\nstraight %.1f\nreverse %.1f\n",
+    notify("throttle base %.2f\nstraight %.2f\nreverse %.2f\n",
            state.base_throttle, state.straight_throttle,
            state.reverse_throttle);
     return;
@@ -82,7 +90,7 @@ void cmd_speed(char *args) {
   char *saveptr = nullptr;
   char *token = strtok_r(args, " \r\n\t", &saveptr);
   if (token == nullptr) {
-    notify("throttle base %.1f\nstraight %.1f\nreverse %.1f\n",
+    notify("throttle base %.2f\nstraight %.2f\nreverse %.2f\n",
            state.base_throttle, state.straight_throttle,
            state.reverse_throttle);
     return;
@@ -91,34 +99,34 @@ void cmd_speed(char *args) {
   if (strcasecmp(token, "base") == 0) {
     char *val = strtok_r(nullptr, " \r\n\t", &saveptr);
     if (val) {
-      state.base_throttle = atoff(val);
+      state.base_throttle = parse_throttle_arg(val);
     }
-    notify("base throttle %.1f\n", state.base_throttle);
+    notify("base throttle %.2f\n", state.base_throttle);
   } else if (strcasecmp(token, "straight") == 0) {
     char *val = strtok_r(nullptr, " \r\n\t", &saveptr);
     if (val) {
-      state.straight_throttle = atoff(val);
+      state.straight_throttle = parse_throttle_arg(val);
     }
-    notify("straight throttle %.1f\n", state.straight_throttle);
+    notify("straight throttle %.2f\n", state.straight_throttle);
   } else if (strcasecmp(token, "reverse") == 0 ||
              strcasecmp(token, "rev") == 0) {
     char *val = strtok_r(nullptr, " \r\n\t", &saveptr);
     if (val) {
-      state.reverse_throttle = atoff(val);
+      state.reverse_throttle = parse_throttle_arg(val);
     }
-    notify("reverse throttle %.1f\n", state.reverse_throttle);
+    notify("reverse throttle %.2f\n", state.reverse_throttle);
   } else {
     // Try setting all three: speed <base> <straight> <reverse>
-    state.base_throttle = atoff(token);
+    state.base_throttle = parse_throttle_arg(token);
     char *val_s = strtok_r(nullptr, " \r\n\t", &saveptr);
     if (val_s) {
-      state.straight_throttle = atoff(val_s);
+      state.straight_throttle = parse_throttle_arg(val_s);
     }
     char *val_r = strtok_r(nullptr, " \r\n\t", &saveptr);
     if (val_r) {
-      state.reverse_throttle = atoff(val_r);
+      state.reverse_throttle = parse_throttle_arg(val_r);
     }
-    notify("throttle base %.1f\nstraight %.1f\nreverse %.1f\n",
+    notify("throttle base %.2f\nstraight %.2f\nreverse %.2f\n",
            state.base_throttle, state.straight_throttle,
            state.reverse_throttle);
   }
@@ -177,7 +185,7 @@ void cmd_load(char *args) {
 void cmd_state(char *args) {
   notify("state: %s\n"
          "pid: kp=%.4f ki=%.4f kd=%.4f offset=%.2f\n"
-         "throt: base=%.1f str=%.1f rev=%.1f\n"
+         "throt: base=%.2f str=%.2f rev=%.2f\n"
          "dist: f=%u l=%u r=%u far=%u rev=%u\n"
          "curr: steer=%.2f throt=%.2f\n",
          running_state_to_str(state.running_state), state.steering_pid.Kp,

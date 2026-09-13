@@ -6,9 +6,9 @@ void load_state_from_prefs(Preferences &prefs, RobotState &state) {
   state.steering_pid.Ki = prefs.getFloat("ki", 0.0f);
   state.steering_pid.Kd = prefs.getFloat("kd", 0.0f);
 
-  state.base_throttle = prefs.getFloat("base_throt", 20.0f);
-  state.reverse_throttle = prefs.getFloat("reverse_throt", 20.0f);
-  state.straight_throttle = prefs.getFloat("straight_throt", 20.0f);
+  state.base_throttle = prefs.getFloat("base_throt", 0.20f);
+  state.reverse_throttle = prefs.getFloat("reverse_throt", 0.20f);
+  state.straight_throttle = prefs.getFloat("straight_throt", 0.20f);
 
   state.steering_pid.offset = prefs.getFloat("offset", 0.0f);
 

@@ -13,14 +13,14 @@ void ESC::writeMicroseconds(uint16_t us) {
   ledcWrite(m_pin, duty);
 }
 
-void ESC::write(int percent) {
-  percent = constrain(percent, -100, 100);
+void ESC::write(float throttle) {
+  throttle = constrain(throttle, -1.0f, 1.0f);
 
   uint16_t us;
-  if (percent >= 0) {
-    us = map(percent, 0, 100, m_neutral_us, m_max_us);
+  if (throttle >= 0.0f) {
+    us = static_cast<uint16_t>(m_neutral_us + throttle * (m_max_us - m_neutral_us));
   } else {
-    us = map(percent, -100, 0, m_min_us, m_neutral_us);
+    us = static_cast<uint16_t>(m_neutral_us + throttle * (m_neutral_us - m_min_us));
   }
 
   writeMicroseconds(us);
