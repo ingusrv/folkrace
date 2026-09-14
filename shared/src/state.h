@@ -40,6 +40,20 @@ struct PIDState {
   float offset;
 };
 
+struct IMUState {
+  float accel_x;
+  float accel_y;
+  float accel_z;
+
+  float gyro_x;
+  float gyro_y;
+  float gyro_z;
+
+  float roll;
+  float pitch;
+  float yaw;
+};
+
 struct RobotState {
   RunningState running_state;
   uint32_t current_time_ms;
@@ -60,4 +74,5 @@ struct RobotState {
   float reverse_throttle;
 
   PIDState steering_pid;
+  IMUState imu;
 };

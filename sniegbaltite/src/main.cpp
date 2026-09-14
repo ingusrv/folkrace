@@ -5,9 +5,14 @@
 #include "driver/esc.h"
 #include "driver/servo.h"
 #include "prefs/prefs.h"
+#include "protocol.h"
 #include "state.h"
+#include "util.h"
 #include <Arduino.h>
+#include <WiFi.h>
 #include <Wire.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
 
 ESC drive_motor = ESC(pin::esc);
 Servo steer_servo = Servo(pin::servo);
@@ -23,6 +28,29 @@ static uint32_t obstacle_start_us = 0;
 static bool obstacle_detected = false;
 static RunningState prev_running_state = RunningState::IDLE;
 
+static void init_espnow() {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(espnow_wifi_channel, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("[ESP-NOW] Initialization failed!");
+    return;
+  }
+
+  esp_now_peer_info_t peer_info = {};
+  memcpy(peer_info.peer_addr, broadcast_address, 6);
+  peer_info.encrypt = false;
+
+  if (esp_now_add_peer(&peer_info) != ESP_OK) {
+    Serial.println("[ESP-NOW] Failed to add broadcast peer!");
+  } else {
+    Serial.println("[ESP-NOW] Initialized and broadcast peer added");
+  }
+}
+
 void setup() {
   load_robot_prefs(state);
 
@@ -36,6 +64,7 @@ void setup() {
   pinMode(pin::right_sensor, INPUT);
 
   init_ble("sniegbaltite");
+  init_espnow();
 
   state.running_state = RunningState::COUNTDOWN;
   countdown_start_ms = millis();
@@ -58,6 +87,53 @@ static inline uint16_t read_clamped_sensor(uint8_t pin) {
     return config::sensor_max_raw;
   }
   return raw;
+}
+
+static void send_telemetry() {
+  PacketHeader header = {
+      .magic = message_magic,
+      .type = PacketType::TELEMETRY,
+      .length = sizeof(TelemetryPacket),
+  };
+
+  uint8_t flags = 0;
+  if (obstacle_detected) {
+    flags |= (1 << 0);
+  }
+  if (ble_is_connected()) {
+    flags |= (1 << 1);
+  }
+
+  TelemetryPacket pkt = {
+      .timestamp_ms = state.current_time_ms,
+      .running_state = state.running_state,
+      .flags = flags,
+      .dist_front = state.dist_front,
+      .dist_right = state.dist_right,
+      .dist_left = state.dist_left,
+      .target_steering = state.target_steering,
+      .current_steering = state.current_steering,
+      .target_throttle = state.target_throttle,
+      .current_throttle = state.current_throttle,
+      .pid_error = state.steering_pid.error,
+      .pid_integral = state.steering_pid.integral,
+      .pid_derivative = state.steering_pid.derivative,
+      .accel_x = state.imu.accel_x,
+      .accel_y = state.imu.accel_y,
+      .accel_z = state.imu.accel_z,
+      .gyro_x = state.imu.gyro_x,
+      .gyro_y = state.imu.gyro_y,
+      .gyro_z = state.imu.gyro_z,
+      .roll = state.imu.roll,
+      .pitch = state.imu.pitch,
+      .yaw = state.imu.yaw,
+  };
+
+  uint8_t buffer[sizeof(PacketHeader) + sizeof(TelemetryPacket)];
+  memcpy(buffer, &header, sizeof(PacketHeader));
+  memcpy(buffer + sizeof(PacketHeader), &pkt, sizeof(TelemetryPacket));
+
+  esp_now_send(broadcast_address, buffer, sizeof(buffer));
 }
 
 void loop() {
@@ -207,6 +283,6 @@ void loop() {
     if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
       last_telemetry_us = state.current_time_us;
     }
-    // Telemetry omitted for now
+    send_telemetry();
   }
 }
