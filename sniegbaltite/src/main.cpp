@@ -27,6 +27,7 @@ static uint32_t countdown_start_ms = 0;
 static uint32_t obstacle_start_us = 0;
 static bool obstacle_detected = false;
 static RunningState prev_running_state = RunningState::IDLE;
+static float reverse_turn_steering = 0.0f;
 
 static void init_espnow() {
   WiFi.mode(WIFI_STA);
@@ -160,6 +161,14 @@ void loop() {
         throttle_limiter.reset(0.0f);
         steering_limiter.reset(0.0f);
         obstacle_detected = false;
+      } else if (state.running_state == RunningState::REVERSE_TURN) {
+        // Latch the steering direction once upon entering REVERSE_TURN.
+        // Steer away from the closer wall (higher Sharp IR value = closer obstacle).
+        if (state.dist_left > state.dist_right) {
+          reverse_turn_steering = 1.0f; // Left wall is closer, steer right
+        } else {
+          reverse_turn_steering = -1.0f; // Right wall is closer, steer left
+        }
       }
       prev_running_state = state.running_state;
     }
@@ -198,7 +207,7 @@ void loop() {
           obstacle_start_us = state.current_time_us;
         } else if (state.current_time_us - obstacle_start_us >=
                    static_cast<uint32_t>(config::reverse_trigger_delay_ms) *
-                       1000) {
+                        1000) {
           state.running_state = RunningState::REVERSE;
           state.maneuver_start_us = state.current_time_us;
           obstacle_detected = false;
@@ -233,21 +242,19 @@ void loop() {
           static_cast<uint32_t>(config::reverse_duration_ms) * 1000) {
         state.running_state = RunningState::REVERSE_TURN;
         state.maneuver_start_us = state.current_time_us;
+        reverse_turn_steering =
+            (state.dist_left > state.dist_right) ? 1.0f : -1.0f;
       }
       break;
 
     case RunningState::REVERSE_TURN:
       state.target_throttle = -state.reverse_throttle;
-      // Steer away from the closer wall (higher value = closer)
-      if (state.dist_left > state.dist_right) {
-        state.target_steering = 1.0f; // Left wall is closer, steer right
-      } else {
-        state.target_steering = -1.0f; // Right wall is closer, steer left
-      }
+      state.target_steering = reverse_turn_steering;
 
       if (state.current_time_us - state.maneuver_start_us >=
           static_cast<uint32_t>(config::reverse_turn_duration_ms) * 1000) {
         reset_pid(state.steering_pid);
+        obstacle_detected = false;
         state.running_state = RunningState::RUNNING;
       }
       break;

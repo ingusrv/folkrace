@@ -1,0 +1,355 @@
+#include "ble/ble.h"
+#include "config.h"
+#include "control/pid.h"
+#include "control/slew_rate_limiter.h"
+#include "driver/RZ7886Driver.h"
+#include "prefs/prefs.h"
+#include "protocol.h"
+#include "state.h"
+#include "util.h"
+#include <Arduino.h>
+#include <VL53L0X.h>
+#include <WiFi.h>
+#include <Wire.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+
+RZ7886Driver drive_left(pin::left_bi, pin::left_fi);
+RZ7886Driver drive_right(pin::right_bi, pin::right_fi);
+VL53L0X tof_front;
+RobotState state = {};
+
+static SlewRateLimiter throttle_limiter(config::throttle_slew_rate_accel,
+                                        config::throttle_slew_rate_decel);
+
+static uint32_t countdown_start_ms = 0;
+static bool obstacle_detected = false;
+static RunningState prev_running_state = RunningState::IDLE;
+static float reverse_turn_steering = 0.0f;
+
+static void init_espnow() {
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_channel(espnow_wifi_channel, WIFI_SECOND_CHAN_NONE);
+  esp_wifi_set_promiscuous(false);
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("[ESP-NOW] Initialization failed!");
+    return;
+  }
+
+  esp_now_peer_info_t peer_info = {};
+  memcpy(peer_info.peer_addr, broadcast_address, 6);
+  peer_info.encrypt = false;
+
+  if (esp_now_add_peer(&peer_info) != ESP_OK) {
+    Serial.println("[ESP-NOW] Failed to add broadcast peer!");
+  } else {
+    Serial.println("[ESP-NOW] Initialized and broadcast peer added");
+  }
+}
+
+static void send_telemetry() {
+  PacketHeader header = {
+      .magic = message_magic,
+      .type = PacketType::TELEMETRY,
+      .length = sizeof(TelemetryPacket),
+  };
+
+  uint8_t flags = 0;
+  if (obstacle_detected) {
+    flags |= (1 << 0);
+  }
+  if (ble_is_connected()) {
+    flags |= (1 << 1);
+  }
+
+  TelemetryPacket pkt = {
+      .timestamp_ms = state.current_time_ms,
+      .running_state = state.running_state,
+      .flags = flags,
+      .dist_front = state.dist_front,
+      .dist_right = state.dist_right,
+      .dist_left = state.dist_left,
+      .target_steering = state.target_steering,
+      .current_steering = state.current_steering,
+      .target_throttle = state.target_throttle,
+      .current_throttle = state.current_throttle,
+      .pid_error = state.steering_pid.error,
+      .pid_integral = state.steering_pid.integral,
+      .pid_derivative = state.steering_pid.derivative,
+      .accel_x = state.imu.accel_x,
+      .accel_y = state.imu.accel_y,
+      .accel_z = state.imu.accel_z,
+      .gyro_x = state.imu.gyro_x,
+      .gyro_y = state.imu.gyro_y,
+      .gyro_z = state.imu.gyro_z,
+      .roll = state.imu.roll,
+      .pitch = state.imu.pitch,
+      .yaw = state.imu.yaw,
+  };
+
+  uint8_t buffer[sizeof(PacketHeader) + sizeof(TelemetryPacket)];
+  memcpy(buffer, &header, sizeof(PacketHeader));
+  memcpy(buffer + sizeof(PacketHeader), &pkt, sizeof(TelemetryPacket));
+
+  esp_now_send(broadcast_address, buffer, sizeof(buffer));
+}
+
+void setup() {
+  load_robot_prefs(state);
+
+  if (state.dist_reverse == 0 || state.dist_reverse > config::tof_max_mm) {
+    state.dist_reverse = config::default_dist_reverse;
+  }
+  if (state.dist_far > config::tof_max_mm) {
+    state.dist_far = config::default_dist_far;
+  }
+  if (state.base_throttle < 0.1f) {
+    state.base_throttle = config::default_base_throttle;
+  }
+  if (state.straight_throttle < 0.1f) {
+    state.straight_throttle = config::default_straight_throttle;
+  }
+  if (state.reverse_throttle < 0.1f) {
+    state.reverse_throttle = config::default_reverse_throttle;
+  }
+  state.dist_front = config::tof_max_mm;
+
+  Wire.begin(pin::sda, pin::scl, 400000);
+  Serial.begin(115200);
+
+  drive_left.init();
+  drive_right.init();
+
+  pinMode(pin::left_sensor, INPUT);
+  pinMode(pin::right_sensor, INPUT);
+
+  tof_front.setBus(&Wire);
+  if (!tof_front.init()) {
+    Serial.println("[ToF] Failed to initialize VL53L0X!");
+  }
+  tof_front.setTimeout(config::tof_timeout_ms);
+  tof_front.startContinuous();
+
+  init_ble("banana");
+  init_espnow();
+
+  state.running_state = RunningState::COUNTDOWN;
+  countdown_start_ms = millis();
+  prev_running_state = RunningState::COUNTDOWN;
+}
+
+static uint32_t last_loop_us = 0;
+constexpr uint32_t loop_interval_us = 1000000 / 100; // 100 Hz
+constexpr float delta_time = static_cast<float>(loop_interval_us) / 1000000.0f;
+
+static uint32_t last_telemetry_us = 0;
+constexpr uint32_t telemetry_interval_us = 1000000 / 30; // 30 Hz
+
+static inline uint16_t read_clamped_sensor(uint8_t pin) {
+  uint16_t raw = analogRead(pin);
+  if (raw < config::sensor_min_raw) {
+    return config::sensor_min_raw;
+  }
+  if (raw > config::sensor_max_raw) {
+    return config::sensor_max_raw;
+  }
+  return raw;
+}
+
+static inline int16_t map_motor_pwm(float norm) {
+  if (norm > 0.01f) {
+    constexpr float min_pwm = 50.0f;
+    float pwm = min_pwm + norm * (255.0f - min_pwm);
+    return static_cast<int16_t>(constrain(pwm, 0.0f, 255.0f));
+  } else if (norm < -0.01f) {
+    constexpr float min_pwm = 50.0f;
+    float pwm = -min_pwm + norm * (255.0f - min_pwm);
+    return static_cast<int16_t>(constrain(pwm, -255.0f, 0.0f));
+  }
+  return 0;
+}
+
+void loop() {
+  state.current_time_ms = millis();
+  state.current_time_us = micros();
+
+  if (state.current_time_us - last_loop_us >= loop_interval_us) {
+    last_loop_us += loop_interval_us;
+    if (state.current_time_us - last_loop_us >= loop_interval_us) {
+      last_loop_us = state.current_time_us;
+    }
+
+    // Read front ToF sensor non-blocking with I2C transmission error check
+    if ((tof_front.readReg(0x13) & 0x07) != 0) {
+      uint16_t tof_dist = tof_front.readRangeContinuousMillimeters();
+      if (!tof_front.timeoutOccurred() && tof_dist > 0 && tof_dist < 8000) {
+        state.dist_front =
+            constrain(tof_dist, config::tof_min_mm, config::tof_max_mm);
+      } else {
+        state.dist_front = config::tof_max_mm;
+      }
+    } else if (tof_front.last_status != 0) {
+      // Re-initialize only on actual I2C transmission error
+      tof_front.init();
+      tof_front.setTimeout(config::tof_timeout_ms);
+      tof_front.startContinuous();
+      state.dist_front = config::tof_max_mm;
+    }
+
+    // Read Sharp analog IR distance sensors and clamp to configured range
+    state.dist_left = read_clamped_sensor(pin::left_sensor);
+    state.dist_right = read_clamped_sensor(pin::right_sensor);
+
+    // Handle state transition edge triggers (e.g., triggered via BLE)
+    if (state.running_state != prev_running_state) {
+      if (state.running_state == RunningState::COUNTDOWN) {
+        countdown_start_ms = state.current_time_ms;
+      } else if (state.running_state == RunningState::IDLE) {
+        reset_pid(state.steering_pid);
+        throttle_limiter.reset(0.0f);
+        obstacle_detected = false;
+      } else if (state.running_state == RunningState::REVERSE) {
+        throttle_limiter.reset(-state.reverse_throttle);
+      } else if (state.running_state == RunningState::REVERSE_TURN) {
+        throttle_limiter.reset(0.0f);
+      }
+      prev_running_state = state.running_state;
+    }
+
+    // Main State Machine
+    switch (state.running_state) {
+    case RunningState::IDLE:
+      state.target_throttle = 0.0f;
+      state.current_throttle = 0.0f;
+      state.target_steering = 0.0f;
+      state.current_steering = 0.0f;
+      drive_left.brake();
+      drive_right.brake();
+      break;
+
+    case RunningState::COUNTDOWN:
+      state.target_throttle = 0.0f;
+      state.target_steering = 0.0f;
+      if (state.current_time_ms - countdown_start_ms >=
+          config::start_delay_ms) {
+        state.running_state = RunningState::RUNNING;
+        reset_pid(state.steering_pid);
+        obstacle_detected = false;
+      }
+      break;
+
+    case RunningState::RUNNING: {
+      // Front obstacle detection (VL53L0X: lower mm = closer)
+      bool obstacle =
+          (state.dist_reverse > 0 && state.dist_front < state.dist_reverse);
+      if (obstacle) {
+        obstacle_detected = true;
+        state.running_state = RunningState::REVERSE;
+        state.maneuver_start_us = state.current_time_us;
+        state.target_throttle = -state.reverse_throttle;
+        state.target_steering = 0.0f;
+        throttle_limiter.reset(-state.reverse_throttle);
+
+        // Latch pivot turn direction for REVERSE_TURN phase:
+        // Sharp IR sensors: higher value = closer wall / obstacle.
+        // If left wall is closer (dist_left >= dist_right), turn right (+steer).
+        // Otherwise turn left (-steer).
+        // Using '>=' ensures head-on collisions (dist_left == dist_right)
+        // always pick a turn direction rather than oscillating straight back and forth.
+        reverse_turn_steering = (state.dist_left >= state.dist_right)
+                                    ? config::reverse_turn_steer
+                                    : -config::reverse_turn_steer;
+        break;
+      } else {
+        obstacle_detected = false;
+      }
+
+      // Throttle control: use straight_throttle if dist_front > dist_far,
+      // otherwise base_throttle (VL53L0X: higher mm = clear path ahead)
+      if (state.dist_far > 0 && state.dist_front > state.dist_far) {
+        state.target_throttle = state.straight_throttle;
+      } else {
+        state.target_throttle = state.base_throttle;
+      }
+
+      // Steering control via normalized PID error
+      float raw_diff = static_cast<float>(state.dist_left) -
+                       static_cast<float>(state.dist_right);
+      state.steering_pid.error =
+          (raw_diff / config::sensor_range) + state.steering_pid.offset;
+      state.target_steering = update_pid(delta_time, state.steering_pid);
+      break;
+    }
+
+    case RunningState::REVERSE: {
+      state.target_throttle = -state.reverse_throttle;
+      state.target_steering = 0.0f; // Pure straight reverse to clear obstacle
+
+      if (state.current_time_us - state.maneuver_start_us >=
+          static_cast<uint32_t>(config::reverse_duration_ms) * 1000) {
+        state.running_state = RunningState::REVERSE_TURN;
+        state.maneuver_start_us = state.current_time_us;
+        state.target_throttle = 0.0f;
+        throttle_limiter.reset(0.0f);
+        state.target_steering = reverse_turn_steering;
+      }
+      break;
+    }
+
+    case RunningState::REVERSE_TURN: {
+      state.target_throttle = 0.0f; // Pivot in place to change heading
+      state.target_steering = reverse_turn_steering;
+
+      if (state.current_time_us - state.maneuver_start_us >=
+          static_cast<uint32_t>(config::reverse_turn_duration_ms) * 1000) {
+        reset_pid(state.steering_pid);
+        obstacle_detected = false;
+        state.running_state = RunningState::RUNNING;
+        state.dist_front = config::tof_max_mm; // Clear stale ToF reading
+      }
+      break;
+    }
+    }
+
+    // Actuator outputs and slew rate limiting (when active)
+    int16_t left_pwm = 0;
+    int16_t right_pwm = 0;
+    if (state.running_state != RunningState::IDLE) {
+      state.current_throttle =
+          throttle_limiter.update(state.target_throttle, delta_time);
+      state.current_steering = state.target_steering;
+
+      float left_norm = state.current_throttle + state.current_steering;
+      float right_norm = state.current_throttle - state.current_steering;
+
+      left_pwm = map_motor_pwm(left_norm);
+      right_pwm = map_motor_pwm(right_norm);
+
+      drive_left.write(left_pwm);
+      drive_right.write(right_pwm);
+    }
+
+    static uint32_t last_debug_ms = 0;
+    if (state.current_time_ms - last_debug_ms >= 250) {
+      last_debug_ms = state.current_time_ms;
+      Serial.printf("[RUN] st=%s f=%u l=%u r=%u throt=%.2f steer=%.2f lpwm=%d rpwm=%d\n",
+                    running_state_to_str(state.running_state),
+                    state.dist_front, state.dist_left, state.dist_right,
+                    state.current_throttle, state.current_steering,
+                    left_pwm, right_pwm);
+    }
+  }
+
+#if 0
+  if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
+    last_telemetry_us += telemetry_interval_us;
+    if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
+      last_telemetry_us = state.current_time_us;
+    }
+    send_telemetry();
+  }
+#endif
+}
