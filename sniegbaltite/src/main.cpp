@@ -2,6 +2,7 @@
 #include "config.h"
 #include "control/pid.h"
 #include "control/slew_rate_limiter.h"
+#include "driver/bmi088.h"
 #include "driver/esc.h"
 #include "driver/servo.h"
 #include "prefs/prefs.h"
@@ -16,6 +17,7 @@
 
 ESC drive_motor = ESC(pin::esc);
 Servo steer_servo = Servo(pin::servo);
+BMI088Driver imu = BMI088Driver(Wire);
 RobotState state = {};
 
 static SlewRateLimiter throttle_limiter(config::throttle_slew_rate_accel,
@@ -57,6 +59,13 @@ void setup() {
 
   Wire.begin(pin::sda, pin::scl, 400000);
   Serial.begin(115200);
+
+  if (!imu.begin()) {
+    Serial.println("[IMU] BMI088 initialization failed!");
+  } else {
+    Serial.println("[IMU] BMI088 initialized successfully");
+  }
+
   drive_motor.init();
   steer_servo.init();
 
@@ -69,6 +78,7 @@ void setup() {
 
   state.running_state = RunningState::COUNTDOWN;
   countdown_start_ms = millis();
+  imu.startCalibration();
   prev_running_state = RunningState::COUNTDOWN;
 }
 
@@ -147,6 +157,9 @@ void loop() {
       last_loop_us = state.current_time_us;
     }
 
+    // Update IMU sensor data & fusion
+    imu.update(state.imu);
+
     // Read Sharp analog IR distance sensors and clamp to configured range
     state.dist_front = read_clamped_sensor(pin::mid_sensor);
     state.dist_left = read_clamped_sensor(pin::left_sensor);
@@ -156,6 +169,7 @@ void loop() {
     if (state.running_state != prev_running_state) {
       if (state.running_state == RunningState::COUNTDOWN) {
         countdown_start_ms = state.current_time_ms;
+        imu.startCalibration();
       } else if (state.running_state == RunningState::IDLE) {
         reset_pid(state.steering_pid);
         throttle_limiter.reset(0.0f);
@@ -187,8 +201,10 @@ void loop() {
     case RunningState::COUNTDOWN:
       state.target_throttle = 0.0f;
       state.target_steering = 0.0f;
+      imu.updateCalibration();
       if (state.current_time_ms - countdown_start_ms >=
           config::start_delay_ms) {
+        imu.finishCalibration();
         state.running_state = RunningState::RUNNING;
         reset_pid(state.steering_pid);
         obstacle_detected = false;
