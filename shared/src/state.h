@@ -7,6 +7,7 @@ enum class RunningState : uint8_t {
   RUNNING,
   REVERSE,
   REVERSE_TURN,
+  WRONG_WAY_RECOVERY,
 };
 
 inline const char *running_state_to_str(RunningState s) {
@@ -21,6 +22,24 @@ inline const char *running_state_to_str(RunningState s) {
     return "REVERSE";
   case RunningState::REVERSE_TURN:
     return "REVERSE_TURN";
+  case RunningState::WRONG_WAY_RECOVERY:
+    return "WRONG_WAY_RECOVERY";
+  default:
+    return "UNKNOWN";
+  }
+}
+
+enum class TrackDirection : uint8_t {
+  COUNTER_CLOCKWISE = 0,
+  CLOCKWISE = 1,
+};
+
+inline const char *track_direction_to_str(TrackDirection d) {
+  switch (d) {
+  case TrackDirection::COUNTER_CLOCKWISE:
+    return "CCW";
+  case TrackDirection::CLOCKWISE:
+    return "CW";
   default:
     return "UNKNOWN";
   }
@@ -75,4 +94,7 @@ struct RobotState {
 
   PIDState steering_pid;
   IMUState imu;
+
+  TrackDirection track_direction;
+  bool wrong_way_detected;
 };
