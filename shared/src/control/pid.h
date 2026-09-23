@@ -21,17 +21,18 @@ inline void reset_pid(PIDState &pid) {
 inline float update_pid(float dt, PIDState &pid) {
   float error = pid.error;
 
-  float derivative = 0.0f;
   if (dt > 0.0f) {
     pid.integral += error * dt;
     // Anti-windup clamping on integral
     pid.integral = std::max(-1.0f, std::min(1.0f, pid.integral));
-    derivative = (error - pid.last_error) / dt;
-    pid.derivative = derivative;
+    float raw_derivative = (error - pid.last_error) / dt;
+    // Low-pass filter the derivative to suppress discrete sampling noise
+    constexpr float d_filter_alpha = 0.25f;
+    pid.derivative += d_filter_alpha * (raw_derivative - pid.derivative);
     pid.last_error = error;
   }
 
   float output =
-      (pid.Kp * error) + (pid.Ki * pid.integral) + (pid.Kd * derivative);
+      (pid.Kp * error) + (pid.Ki * pid.integral) + (pid.Kd * pid.derivative);
   return std::max(-1.0f, std::min(1.0f, output));
 }
