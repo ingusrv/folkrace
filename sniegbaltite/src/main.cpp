@@ -10,6 +10,7 @@
 #include "state.h"
 #include "util.h"
 #include <Arduino.h>
+#include <VL53L0X.h>
 #include <WiFi.h>
 #include <Wire.h>
 #include <esp_now.h>
@@ -25,6 +26,10 @@ static SlewRateLimiter throttle_limiter(config::throttle_slew_rate_accel,
 static SlewRateLimiter steering_limiter(config::steering_slew_rate,
                                         config::steering_slew_rate);
 
+VL53L0X sensor_front;
+VL53L0X sensor_left;
+VL53L0X sensor_right;
+
 static uint32_t countdown_start_ms = 0;
 static uint32_t obstacle_start_us = 0;
 static bool obstacle_detected = false;
@@ -36,6 +41,55 @@ static float min_forward_yaw = 0.0f;
 static uint32_t wrong_way_start_us = 0;
 static uint8_t recovery_phase = 1;
 static uint32_t recovery_phase_start_us = 0;
+
+void init_tof() {
+  pinMode(pin::xshut_left, OUTPUT);
+  pinMode(pin::xshut_right, OUTPUT);
+
+  digitalWrite(pin::xshut_left, LOW);
+  digitalWrite(pin::xshut_right, LOW);
+
+  delay(10);
+
+  // Front sensor: if power was lost, it reset to default 0x29; if power was retained, it's at 0x30
+  if (sensor_front.getAddress() != 0x30) {
+    sensor_front.setAddress(0x30);
+  } else {
+    sensor_front.setAddress(0x30);
+    if (sensor_front.last_status != 0) {
+      sensor_front = VL53L0X();
+      sensor_front.setAddress(0x30);
+    }
+  }
+  sensor_front.init();
+  sensor_front.setTimeout(100);
+  sensor_front.setMeasurementTimingBudget(config::tof_timing_budget_us);
+  sensor_front.startContinuous();
+
+  delay(5);
+
+  pinMode(pin::xshut_left, INPUT);
+  delay(10);
+  sensor_left = VL53L0X();
+  sensor_left.setAddress(0x32);
+  sensor_left.init();
+  sensor_left.setTimeout(100);
+  sensor_left.setMeasurementTimingBudget(config::tof_timing_budget_us);
+  sensor_left.startContinuous();
+
+  delay(5);
+
+  pinMode(pin::xshut_right, INPUT);
+  delay(10);
+  sensor_right = VL53L0X();
+  sensor_right.setAddress(0x31);
+  sensor_right.init();
+  sensor_right.setTimeout(100);
+  sensor_right.setMeasurementTimingBudget(config::tof_timing_budget_us);
+  sensor_right.startContinuous();
+
+  delay(10);
+}
 
 static void init_espnow() {
   WiFi.mode(WIFI_STA);
@@ -75,9 +129,8 @@ void setup() {
   drive_motor.init();
   steer_servo.init();
 
-  pinMode(pin::mid_sensor, INPUT);
-  pinMode(pin::left_sensor, INPUT);
-  pinMode(pin::right_sensor, INPUT);
+  init_tof();
+
   pinMode(pin::direction_switch, INPUT_PULLUP);
 
   state.track_direction = (digitalRead(pin::direction_switch) == LOW)
@@ -104,13 +157,23 @@ constexpr float delta_time = static_cast<float>(loop_interval_us) / 1000000.0f;
 static uint32_t last_telemetry_us = 0;
 constexpr uint32_t telemetry_interval_us = 1000000 / 30; // 30 Hz
 
-static inline uint16_t read_clamped_sensor(uint8_t pin) {
-  uint16_t raw = analogRead(pin);
+bool is_tof_data_ready(VL53L0X &sensor) {
+  return (sensor.readReg(VL53L0X::RESULT_INTERRUPT_STATUS) & 0x07) != 0;
+}
+
+uint16_t tof_read_distance(VL53L0X &sensor) {
+  uint16_t range = sensor.readReg16Bit(VL53L0X::RESULT_RANGE_STATUS + 10);
+  sensor.writeReg(VL53L0X::SYSTEM_INTERRUPT_CLEAR, 0x01);
+  return range;
+}
+
+static inline uint16_t read_clamped_sensor(VL53L0X &sensor) {
+  uint16_t raw = tof_read_distance(sensor);
+  if (sensor.timeoutOccurred() || raw > config::sensor_max_raw) {
+    return config::sensor_max_raw;
+  }
   if (raw < config::sensor_min_raw) {
     return config::sensor_min_raw;
-  }
-  if (raw > config::sensor_max_raw) {
-    return config::sensor_max_raw;
   }
   return raw;
 }
@@ -186,10 +249,29 @@ void loop() {
                                 ? TrackDirection::CLOCKWISE
                                 : TrackDirection::COUNTER_CLOCKWISE;
 
-    // Read Sharp analog IR distance sensors and clamp to configured range
-    state.dist_front = read_clamped_sensor(pin::mid_sensor);
-    state.dist_left = read_clamped_sensor(pin::left_sensor);
-    state.dist_right = read_clamped_sensor(pin::right_sensor);
+    // Read VL53L0X ToF distance sensors when ready
+    if (is_tof_data_ready(sensor_front)) {
+      state.dist_front = read_clamped_sensor(sensor_front);
+    }
+    if (is_tof_data_ready(sensor_left)) {
+      state.dist_left = read_clamped_sensor(sensor_left);
+    }
+    if (is_tof_data_ready(sensor_right)) {
+      state.dist_right = read_clamped_sensor(sensor_right);
+    }
+
+    // Check if any ToF sensor lost connection (I2C transmission error)
+    if (sensor_front.last_status != 0 || sensor_left.last_status != 0 ||
+        sensor_right.last_status != 0) {
+      static uint32_t last_tof_reset_ms = 0;
+      if (state.current_time_ms - last_tof_reset_ms >= 250) {
+        last_tof_reset_ms = state.current_time_ms;
+        Serial.printf("[TOF] I2C error (f=%d l=%d r=%d). Re-initializing ToF sensors...\n",
+                      sensor_front.last_status, sensor_left.last_status,
+                      sensor_right.last_status);
+        init_tof();
+      }
+    }
 
     // Calculate progress frontier & yaw deviation based on track direction
     float yaw_deviation = 0.0f;
@@ -278,20 +360,23 @@ void loop() {
         wrong_way_start_us = 0;
       }
 
-      // Collision detection: Sharp IR sensors output higher values the closer
-      // an obstacle is. Transition to REVERSE if dist_front >
-      // state.dist_reverse for longer than 1 second.
-      bool obstacle =
-          (state.dist_reverse > 0 && state.dist_front > state.dist_reverse);
+      // Front obstacle detection
+      uint16_t rev_dist = (state.dist_reverse > 0)
+                              ? state.dist_reverse
+                              : config::default_dist_reverse;
+      bool obstacle = (state.dist_front < rev_dist);
       if (obstacle) {
         if (!obstacle_detected) {
           obstacle_detected = true;
           obstacle_start_us = state.current_time_us;
         } else if (state.current_time_us - obstacle_start_us >=
                    static_cast<uint32_t>(config::reverse_trigger_delay_ms) *
-                        1000) {
+                       1000) {
           state.running_state = RunningState::REVERSE;
           state.maneuver_start_us = state.current_time_us;
+          reverse_turn_steering =
+              (state.track_direction == TrackDirection::CLOCKWISE) ? 1.0f
+                                                                   : -1.0f;
           obstacle_detected = false;
           break;
         }
@@ -299,21 +384,57 @@ void loop() {
         obstacle_detected = false;
       }
 
-      // Throttle control: use straight_throttle if dist_front < dist_far,
-      // otherwise base_throttle
-      // sharp ir sensors: higher value = closer to obstacle.
-      if (state.dist_far > 0 && state.dist_front < state.dist_far) {
-        state.target_throttle = state.straight_throttle;
-      } else {
-        state.target_throttle = state.base_throttle;
+      // 1. Lateral centering (positive = steer right away from left wall)
+      float raw_diff = static_cast<float>(state.dist_right) -
+                       static_cast<float>(state.dist_left);
+      float steer_side =
+          constrain(raw_diff / config::side_turn_range, -1.0f, 1.0f);
+
+      // 2. Emergency side wall repulsion
+      float steer_repel = 0.0f;
+      if (state.dist_left < config::side_danger_dist) {
+        steer_repel +=
+            static_cast<float>(config::side_danger_dist - state.dist_left) /
+            static_cast<float>(config::side_danger_dist);
+      }
+      if (state.dist_right < config::side_danger_dist) {
+        steer_repel -=
+            static_cast<float>(config::side_danger_dist - state.dist_right) /
+            static_cast<float>(config::side_danger_dist);
       }
 
-      // Steering control via normalized PID error
-      float raw_diff = static_cast<float>(state.dist_left) -
-                       static_cast<float>(state.dist_right);
-      state.steering_pid.error =
-          (raw_diff / config::sensor_range) + state.steering_pid.offset;
+      // 3. Front obstacle / corner anticipation
+      float front_urgency = 0.0f;
+      float turn_dir = (state.dist_right >= state.dist_left) ? 1.0f : -1.0f;
+
+      if (state.dist_front < config::front_turn_dist) {
+        front_urgency =
+            static_cast<float>(config::front_turn_dist - state.dist_front) /
+            static_cast<float>(config::front_turn_dist -
+                               config::front_critical_dist);
+        front_urgency = constrain(front_urgency, 0.0f, 1.0f);
+      }
+
+      // Blend side guidance and front cornering
+      float raw_steer_target =
+          (1.0f - front_urgency) *
+              constrain(steer_side + steer_repel, -1.0f, 1.0f) +
+          (front_urgency * turn_dir);
+      raw_steer_target = constrain(raw_steer_target, -1.0f, 1.0f);
+
+      // Steering PID update (includes trim offset)
+      state.steering_pid.error = raw_steer_target + state.steering_pid.offset;
       state.target_steering = update_pid(delta_time, state.steering_pid);
+
+      // 4. Throttle control with corner slowing
+      float throttle = state.base_throttle;
+      if (state.dist_far > 0 && state.dist_front > state.dist_far) {
+        throttle = state.straight_throttle;
+      }
+      // Slow down when entering a corner so front wheels grip and don't
+      // understeer
+      float corner_speed_factor = 1.0f - 0.45f * front_urgency;
+      state.target_throttle = throttle * corner_speed_factor;
       break;
     }
 
@@ -350,7 +471,8 @@ void loop() {
       uint32_t total_recovery_time_us =
           state.current_time_us - state.maneuver_start_us;
 
-      // Timeout safeguard: if recovery takes too long, reset frontier and resume
+      // Timeout safeguard: if recovery takes too long, reset frontier and
+      // resume
       if (total_recovery_time_us >=
           static_cast<uint32_t>(config::wrong_way_turnaround_timeout_ms) *
               1000) {
@@ -368,19 +490,24 @@ void loop() {
       }
 
       if (recovery_phase == 1) {
-        // Phase 1: Forward drive with full lock towards turn / wall to pivot nose (500ms max, min 250ms)
+        // Phase 1: Forward drive with full lock towards turn / wall to pivot
+        // nose (500ms max, min 250ms)
         state.target_throttle = state.base_throttle;
         state.target_steering = recovery_forward_steer;
 
-        // Transition to Phase 2 after 500ms (or if hitting wall after at least 250ms)
-        bool obstacle = (state.dist_reverse > 0 &&
-                         state.dist_front > state.dist_reverse);
+        // Transition to Phase 2 after 500ms (or if hitting wall after at least
+        // 250ms)
+        uint16_t rev_dist = (state.dist_reverse > 0)
+                                ? state.dist_reverse
+                                : config::default_dist_reverse;
+        bool obstacle = (state.dist_front < rev_dist);
         if (phase_time_us >= 500000 || (obstacle && phase_time_us >= 250000)) {
           recovery_phase = 2;
           recovery_phase_start_us = state.current_time_us;
         }
       } else if (recovery_phase == 2) {
-        // Phase 2: Reverse drive with opposite steering lock to swing tail and rotate nose (900ms)
+        // Phase 2: Reverse drive with opposite steering lock to swing tail and
+        // rotate nose (900ms)
         state.target_throttle = -state.reverse_throttle;
         state.target_steering = recovery_reverse_steer;
 
@@ -390,16 +517,19 @@ void loop() {
           recovery_phase_start_us = state.current_time_us;
         }
       } else if (recovery_phase == 3) {
-        // Phase 3: Counter-turn forward with recovery steering to finish the 180° turnaround! (600ms max, min 250ms)
+        // Phase 3: Counter-turn forward with recovery steering to finish the
+        // 180° turnaround! (600ms max, min 250ms)
         state.target_throttle = state.base_throttle;
         state.target_steering = recovery_forward_steer;
 
-        // Finish recovery when heading is aligned, front obstacle hit, or after 600ms
-        bool obstacle = (state.dist_reverse > 0 &&
-                         state.dist_front > state.dist_reverse);
+        // Finish recovery when heading is aligned, front obstacle hit, or after
+        // 600ms
+        uint16_t rev_dist = (state.dist_reverse > 0)
+                                ? state.dist_reverse
+                                : config::default_dist_reverse;
+        bool obstacle = (state.dist_front < rev_dist);
         if (yaw_deviation <= config::wrong_way_resume_threshold_deg ||
-            (obstacle && phase_time_us >= 250000) ||
-            phase_time_us >= 600000) {
+            (obstacle && phase_time_us >= 250000) || phase_time_us >= 600000) {
           if (state.track_direction == TrackDirection::COUNTER_CLOCKWISE) {
             max_forward_yaw = state.imu.yaw;
           } else {
@@ -438,6 +568,15 @@ void loop() {
 
       steer_servo.write(servo_deg);
       drive_motor.write(state.current_throttle);
+    }
+
+    static uint32_t last_debug_ms = 0;
+    if (state.current_time_ms - last_debug_ms >= 200) {
+      last_debug_ms = state.current_time_ms;
+      Serial.printf("[RUN] st=%s f=%u l=%u r=%u err=%.2f str=%.2f thr=%.2f\n",
+                    running_state_to_str(state.running_state), state.dist_front,
+                    state.dist_left, state.dist_right, state.steering_pid.error,
+                    state.current_steering, state.current_throttle);
     }
   }
 
