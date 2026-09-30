@@ -321,14 +321,24 @@ bool is_tof_data_ready(VL53L0X &sensor) {
 }
 
 uint16_t tof_read_distance(VL53L0X &sensor) {
+  // Read Range Status (register 0x14, bits 6:3 hold error status)
+  uint8_t status_byte = sensor.readReg(VL53L0X::RESULT_RANGE_STATUS);
+  uint8_t range_status = (status_byte & 0x78) >> 3;
+
   uint16_t range = sensor.readReg16Bit(VL53L0X::RESULT_RANGE_STATUS + 10);
   sensor.writeReg(VL53L0X::SYSTEM_INTERRUPT_CLEAR, 0x01);
+
+  // Status 0 is valid. Non-zero status (sigma fail, signal fail, phase fail)
+  // or sentinel out-of-range values (>= 8190) indicate an invalid measurement.
+  if (sensor.last_status != 0 || range_status != 0 || range >= 8190) {
+    return config::sensor_max_raw;
+  }
   return range;
 }
 
 static inline uint16_t read_clamped_sensor(VL53L0X &sensor) {
   uint16_t raw = tof_read_distance(sensor);
-  if (sensor.timeoutOccurred() || raw > config::sensor_max_raw) {
+  if (raw > config::sensor_max_raw) {
     return config::sensor_max_raw;
   }
   if (raw < config::sensor_min_raw) {
