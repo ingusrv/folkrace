@@ -298,6 +298,11 @@ void setup() {
   init_ble("sniegbaltite");
   init_espnow();
 
+  state.dist_side_front_left = config::sensor_max_raw;
+  state.dist_side_front_right = config::sensor_max_raw;
+  state.dist_side_rear_left = config::sensor_max_raw;
+  state.dist_side_rear_right = config::sensor_max_raw;
+
   state.running_state = RunningState::COUNTDOWN;
   countdown_start_ms = millis();
   imu.startCalibration();
@@ -336,6 +341,7 @@ static void send_telemetry() {
   PacketHeader header = {
       .magic = message_magic,
       .type = PacketType::TELEMETRY,
+      .robot_id = RobotId::SNIEGBALTITE,
       .length = sizeof(TelemetryPacket),
   };
 
@@ -363,6 +369,10 @@ static void send_telemetry() {
       .dist_front = state.dist_front,
       .dist_right = state.dist_right,
       .dist_left = state.dist_left,
+      .dist_side_front_left = state.dist_side_front_left,
+      .dist_side_rear_left = state.dist_side_rear_left,
+      .dist_side_front_right = state.dist_side_front_right,
+      .dist_side_rear_right = state.dist_side_rear_right,
       .target_steering = state.target_steering,
       .current_steering = state.current_steering,
       .target_throttle = state.target_throttle,
@@ -431,15 +441,19 @@ void loop() {
     // Read side ToF distance sensors (Wire1) when ready
     if (is_tof_data_ready(sensor_front_left)) {
       dist_front_left = read_clamped_sensor(sensor_front_left);
+      state.dist_side_front_left = dist_front_left;
     }
     if (is_tof_data_ready(sensor_front_right)) {
       dist_front_right = read_clamped_sensor(sensor_front_right);
+      state.dist_side_front_right = dist_front_right;
     }
     if (is_tof_data_ready(sensor_rear_left)) {
       dist_rear_left = read_clamped_sensor(sensor_rear_left);
+      state.dist_side_rear_left = dist_rear_left;
     }
     if (is_tof_data_ready(sensor_rear_right)) {
       dist_rear_right = read_clamped_sensor(sensor_rear_right);
+      state.dist_side_rear_right = dist_rear_right;
     }
 
     bool main_tof_error =

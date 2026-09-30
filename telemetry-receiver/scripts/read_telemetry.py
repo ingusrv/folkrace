@@ -13,9 +13,25 @@ import time
 import serial
 
 
+ROBOT_COLORS = {
+    "sniegbaltite": "\033[96m",  # Bright Cyan
+    "rosepink": "\033[95m",      # Bright Magenta
+    "banana": "\033[93m",        # Bright Yellow
+    "nakts": "\033[94m",         # Bright Blue
+}
+COLOR_RESET = "\033[0m"
+
+ROBOT_PORT_OFFSETS = {
+    "sniegbaltite": 0,
+    "rosepink": 1,
+    "banana": 2,
+    "nakts": 3,
+}
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Read Folkrace telemetry over serial and forward to PlotJuggler via UDP."
+        description="Read Folkrace multi-robot telemetry over serial and forward to PlotJuggler via UDP."
     )
     parser.add_argument(
         "port_pos",
@@ -56,7 +72,22 @@ def parse_args():
         "--udp-port",
         type=int,
         default=9870,
-        help="Target UDP port for PlotJuggler (default: 9870)",
+        help="Target UDP base port for PlotJuggler (default: 9870)",
+    )
+    parser.add_argument(
+        "--multi-port",
+        action="store_true",
+        help="Forward each robot to a dedicated UDP port (e.g. 9870 for sniegbaltite, 9871 for rosepink)",
+    )
+    parser.add_argument(
+        "--robot",
+        default=None,
+        help="Filter telemetry to a specific robot name (e.g. --robot sniegbaltite)",
+    )
+    parser.add_argument(
+        "--flat",
+        action="store_true",
+        help="Send flat JSON keys without namespacing under robot name",
     )
     parser.add_argument(
         "--no-udp",
@@ -76,13 +107,21 @@ def main():
     args = parse_args()
     port = args.port_opt or args.port_pos or "/dev/ttyUSB0"
     baud = args.baud_opt or args.baud_pos or 460800
+    filter_robot = args.robot.lower() if args.robot else None
 
     # Initialize UDP socket if forwarding is enabled
     sock = None
     if not args.no_udp:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        print(f"PlotJuggler UDP stream: forwarding to {args.udp_ip}:{args.udp_port}")
-        print("  -> In PlotJuggler: Streaming -> Start 'UDP Server', Protocol: JSON, Port: 9870")
+        if args.multi_port:
+            print(f"PlotJuggler UDP stream: multi-port mode starting at {args.udp_ip}:{args.udp_port}")
+            for rname, offset in ROBOT_PORT_OFFSETS.items():
+                print(f"  -> {rname:<12}: UDP port {args.udp_port + offset}")
+        else:
+            print(f"PlotJuggler UDP stream: forwarding to {args.udp_ip}:{args.udp_port}")
+            print(f"  -> In PlotJuggler: Streaming -> Start 'UDP Server', Protocol: JSON, Port: {args.udp_port}")
+            if not args.flat:
+                print("  -> Robot curves will be namespaced: /sniegbaltite/..., /rosepink/...")
 
     print(f"Opening {port} at {baud} baud...")
     try:
@@ -92,6 +131,7 @@ def main():
         sys.exit(1)
 
     time.sleep(1.0)  # Wait for serial reset if applicable
+    start_time = time.time()
     print("Listening for telemetry packets (Ctrl+C to exit)...")
 
     try:
@@ -108,10 +148,16 @@ def main():
                     continue
 
                 data = json.loads(line_str)
+                robot_name = data.get("robot", "unknown").lower()
 
-                # Add explicit timestamp in seconds for PlotJuggler time axis
-                if "timestamp" not in data and "time" in data:
-                    data["timestamp"] = data["time"] / 1000.0
+                # Filter by robot if requested
+                if filter_robot and robot_name != filter_robot:
+                    continue
+
+                # Synchronized race timestamp across all robots (seconds from script start)
+                host_timestamp = time.time() - start_time
+                data["robot_time_ms"] = data.get("time", 0)
+                data["timestamp"] = host_timestamp
 
                 # Expand arrays into explicit named scalar fields for cleaner PlotJuggler curve names
                 if "accel" in data and isinstance(data["accel"], list) and len(data["accel"]) == 3:
@@ -123,17 +169,34 @@ def main():
 
                 # Forward to PlotJuggler via UDP
                 if sock:
+                    target_port = args.udp_port
+                    if args.multi_port:
+                        port_offset = ROBOT_PORT_OFFSETS.get(robot_name, len(ROBOT_PORT_OFFSETS))
+                        target_port = args.udp_port + port_offset
+
+                    # Structure payload: namespaced unless --flat is requested
+                    if args.flat:
+                        payload_dict = data
+                    else:
+                        payload_dict = {
+                            "timestamp": host_timestamp,
+                            robot_name: data,
+                        }
+
                     try:
-                        udp_payload = json.dumps(data).encode("utf-8")
-                        sock.sendto(udp_payload, (args.udp_ip, args.udp_port))
+                        udp_payload = json.dumps(payload_dict).encode("utf-8")
+                        sock.sendto(udp_payload, (args.udp_ip, target_port))
                     except OSError:
                         pass
 
                 if not args.quiet:
+                    color = ROBOT_COLORS.get(robot_name, "\033[97m")
                     print(
+                        f"[{color}{robot_name:<12}{COLOR_RESET}] "
                         f"[{data.get('time', 0):>7} ms] "
                         f"State: {data.get('state', 'UNKNOWN'):<12} "
                         f"Dist: (F:{data.get('dist_front', 0):>4}, R:{data.get('dist_right', 0):>4}, L:{data.get('dist_left', 0):>4}) "
+                        f"Side: (FL:{data.get('dist_side_fl', 0):>4}, RL:{data.get('dist_side_rl', 0):>4}, FR:{data.get('dist_side_fr', 0):>4}, RR:{data.get('dist_side_rr', 0):>4}) "
                         f"Steer: {data.get('current_steering', 0):>6.2f} "
                         f"Throt: {data.get('current_throttle', 0):>6.2f} "
                         f"PID err: {data.get('pid_error', 0):>7.4f}"

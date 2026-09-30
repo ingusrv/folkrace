@@ -27,6 +27,8 @@ struct StanleyConfig {
 struct SideWallEstimate {
   float distance_mm = 0.0f;        // Perpendicular distance to wall in mm
   float min_distance_mm = 0.0f;    // Minimum observed distance to wall (for repulsion)
+  float front_dist_mm = 0.0f;      // Observed or projected front distance in mm
+  float rear_dist_mm = 0.0f;       // Observed or projected rear distance in mm
   float heading_error_rad = 0.0f;  // Heading error in radians (positive = vehicle turned into wall)
   float heading_error_deg = 0.0f;  // Heading error in degrees
   bool valid = false;              // True if wall detection is reliable

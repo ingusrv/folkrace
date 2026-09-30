@@ -64,6 +64,7 @@ static void send_telemetry() {
   PacketHeader header = {
       .magic = message_magic,
       .type = PacketType::TELEMETRY,
+      .robot_id = RobotId::BANANA,
       .length = sizeof(TelemetryPacket),
   };
 
@@ -82,6 +83,10 @@ static void send_telemetry() {
       .dist_front = state.dist_front,
       .dist_right = state.dist_right,
       .dist_left = state.dist_left,
+      .dist_side_front_left = 0,
+      .dist_side_rear_left = 0,
+      .dist_side_front_right = 0,
+      .dist_side_rear_right = 0,
       .target_steering = state.target_steering,
       .current_steering = state.current_steering,
       .target_throttle = state.target_throttle,

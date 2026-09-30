@@ -220,16 +220,25 @@ static SideWallEstimate process_vl53l5cx(const VL53L5CX_ResultsData &data,
     est.distance_mm = dist;
     est.min_distance_mm = (min_observed_dist < 10000.0f) ? min_observed_dist : dist;
     est.valid = (dist >= config::sensor_min_raw && dist <= config::stanley_max_valid_dist_mm);
+
+    float half_baseline = config::stanley_sensor_baseline_mm * 0.5f;
+    float cos_m = std::cos(std::atan(m));
+    est.front_dist_mm = std::max(0.0f, (y0 + m * half_baseline) * cos_m);
+    est.rear_dist_mm = std::max(0.0f, (y0 - m * half_baseline) * cos_m);
   } else if (valid_count == 1) {
     float dist = y_pts[0];
     est.heading_error_rad = 0.0f;
     est.heading_error_deg = 0.0f;
     est.distance_mm = dist;
     est.min_distance_mm = (min_observed_dist < 10000.0f) ? min_observed_dist : dist;
+    est.front_dist_mm = dist;
+    est.rear_dist_mm = dist;
     est.valid = (dist >= config::sensor_min_raw && dist <= config::stanley_max_valid_dist_mm);
   } else {
     est.distance_mm = static_cast<float>(config::sensor_max_raw);
     est.min_distance_mm = static_cast<float>(config::sensor_max_raw);
+    est.front_dist_mm = static_cast<float>(config::sensor_max_raw);
+    est.rear_dist_mm = static_cast<float>(config::sensor_max_raw);
     est.heading_error_rad = 0.0f;
     est.heading_error_deg = 0.0f;
     est.valid = false;
@@ -462,6 +471,11 @@ void setup() {
   init_ble("roze");
   init_espnow();
 
+  state.dist_side_front_left = config::sensor_max_raw;
+  state.dist_side_front_right = config::sensor_max_raw;
+  state.dist_side_rear_left = config::sensor_max_raw;
+  state.dist_side_rear_right = config::sensor_max_raw;
+
   state.running_state = RunningState::COUNTDOWN;
   countdown_start_ms = millis();
   imu.startCalibration();
@@ -500,6 +514,7 @@ static void send_telemetry() {
   PacketHeader header = {
       .magic = message_magic,
       .type = PacketType::TELEMETRY,
+      .robot_id = RobotId::ROSEPINK,
       .length = sizeof(TelemetryPacket),
   };
 
@@ -524,6 +539,10 @@ static void send_telemetry() {
       .dist_front = state.dist_front,
       .dist_right = state.dist_right,
       .dist_left = state.dist_left,
+      .dist_side_front_left = state.dist_side_front_left,
+      .dist_side_rear_left = state.dist_side_rear_left,
+      .dist_side_front_right = state.dist_side_front_right,
+      .dist_side_rear_right = state.dist_side_rear_right,
       .target_steering = state.target_steering,
       .current_steering = state.current_steering,
       .target_throttle = state.target_throttle,
@@ -584,6 +603,15 @@ void loop() {
     cur_wall_left = side_wall_left;
     cur_wall_right = side_wall_right;
     portEXIT_CRITICAL(&side_wall_mux);
+
+    state.dist_side_front_left = static_cast<uint16_t>(constrain(
+        cur_wall_left.front_dist_mm, 0.0f, static_cast<float>(config::sensor_max_raw)));
+    state.dist_side_rear_left = static_cast<uint16_t>(constrain(
+        cur_wall_left.rear_dist_mm, 0.0f, static_cast<float>(config::sensor_max_raw)));
+    state.dist_side_front_right = static_cast<uint16_t>(constrain(
+        cur_wall_right.front_dist_mm, 0.0f, static_cast<float>(config::sensor_max_raw)));
+    state.dist_side_rear_right = static_cast<uint16_t>(constrain(
+        cur_wall_right.rear_dist_mm, 0.0f, static_cast<float>(config::sensor_max_raw)));
 
     bool main_tof_error =
         (sensor_front.last_status != 0 || sensor_left.last_status != 0 ||

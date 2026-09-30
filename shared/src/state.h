@@ -81,6 +81,10 @@ struct RobotState {
   uint16_t dist_front;
   uint16_t dist_right;
   uint16_t dist_left;
+  uint16_t dist_side_front_left;
+  uint16_t dist_side_rear_left;
+  uint16_t dist_side_front_right;
+  uint16_t dist_side_rear_right;
   uint16_t dist_far;
   uint16_t dist_reverse;
   float target_steering;

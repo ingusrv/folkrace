@@ -7,9 +7,36 @@ enum class PacketType : uint8_t {
   CONFIG,
 };
 
+enum class RobotId : uint8_t {
+  UNKNOWN = 0,
+  SNIEGBALTITE = 1,
+  ROSEPINK = 2,
+  BANANA = 3,
+  NAKTS = 4,
+  ALL = 255,
+};
+
+inline const char *robot_id_to_str(RobotId id) {
+  switch (id) {
+  case RobotId::SNIEGBALTITE:
+    return "sniegbaltite";
+  case RobotId::ROSEPINK:
+    return "rosepink";
+  case RobotId::BANANA:
+    return "banana";
+  case RobotId::NAKTS:
+    return "nakts";
+  case RobotId::ALL:
+    return "all";
+  default:
+    return "unknown";
+  }
+}
+
 struct __attribute__((packed)) PacketHeader {
   uint32_t magic;
   PacketType type;
+  RobotId robot_id;
   uint16_t length;
 };
 
@@ -21,6 +48,11 @@ struct __attribute__((packed)) TelemetryPacket {
   uint16_t dist_front;
   uint16_t dist_right;
   uint16_t dist_left;
+
+  uint16_t dist_side_front_left;
+  uint16_t dist_side_rear_left;
+  uint16_t dist_side_front_right;
+  uint16_t dist_side_rear_right;
 
   float target_steering;
   float current_steering;

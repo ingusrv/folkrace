@@ -30,17 +30,23 @@ void on_data_received(const esp_now_recv_info_t *recv_info, const uint8_t *data,
 
     // Print JSON line for Python script consumption
     Serial.printf(
-        "{\"time\":%lu,\"state\":\"%s\",\"state_id\":%u,\"flags\":%u,"
+        "{\"robot\":\"%s\",\"robot_id\":%u,\"time\":%lu,\"state\":\"%s\",\"state_id\":%u,\"flags\":%u,"
         "\"dist_front\":%u,\"dist_right\":%u,\"dist_left\":%u,"
+        "\"dist_side_fl\":%u,\"dist_side_rl\":%u,\"dist_side_fr\":%u,\"dist_side_rr\":%u,"
         "\"target_steering\":%.3f,\"current_steering\":%.3f,"
         "\"target_throttle\":%.3f,\"current_throttle\":%.3f,"
         "\"pid_error\":%.4f,\"pid_integral\":%.4f,\"pid_derivative\":%.4f,"
         "\"accel\":[%.3f,%.3f,%.3f],\"gyro\":[%.3f,%.3f,%.3f],\"euler\":[%.2f,%"
         ".2f,%.2f]}\n",
+        robot_id_to_str(header.robot_id),
+        static_cast<uint8_t>(header.robot_id),
         (unsigned long)pkt.timestamp_ms,
         running_state_to_str(pkt.running_state),
         static_cast<uint8_t>(pkt.running_state), pkt.flags, pkt.dist_front,
-        pkt.dist_right, pkt.dist_left, pkt.target_steering,
+        pkt.dist_right, pkt.dist_left,
+        pkt.dist_side_front_left, pkt.dist_side_rear_left,
+        pkt.dist_side_front_right, pkt.dist_side_rear_right,
+        pkt.target_steering,
         pkt.current_steering, pkt.target_throttle, pkt.current_throttle,
         pkt.pid_error, pkt.pid_integral, pkt.pid_derivative, pkt.accel_x,
         pkt.accel_y, pkt.accel_z, pkt.gyro_x, pkt.gyro_y, pkt.gyro_z, pkt.roll,

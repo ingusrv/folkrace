@@ -129,6 +129,8 @@ StanleyOutput StanleyController::update(
   if (left_wall.valid) {
     left_wall.distance_mm = static_cast<float>(dist_front_left);
     left_wall.min_distance_mm = static_cast<float>(std::min(dist_front_left, dist_rear_left));
+    left_wall.front_dist_mm = static_cast<float>(dist_front_left);
+    left_wall.rear_dist_mm = static_cast<float>(dist_rear_left);
     left_wall.heading_error_rad = std::atan2(
         static_cast<float>(dist_rear_left) - static_cast<float>(dist_front_left),
         m_config.sensor_baseline_mm);
@@ -147,6 +149,8 @@ StanleyOutput StanleyController::update(
   if (right_wall.valid) {
     right_wall.distance_mm = static_cast<float>(dist_front_right);
     right_wall.min_distance_mm = static_cast<float>(std::min(dist_front_right, dist_rear_right));
+    right_wall.front_dist_mm = static_cast<float>(dist_front_right);
+    right_wall.rear_dist_mm = static_cast<float>(dist_rear_right);
     right_wall.heading_error_rad = std::atan2(
         static_cast<float>(dist_front_right) - static_cast<float>(dist_rear_right),
         m_config.sensor_baseline_mm);
