@@ -1,0 +1,7 @@
+{
+    "clangd.path": "/home/ingus/.platformio/packages/tool-clangd-esp/bin/clangd",
+    "clangd.arguments": [
+        "--compile-commands-dir=/home/ingus/dev/folkrace/rosepink/.cache/clangd",
+        "--query-driver=/home/ingus/.platformio/packages/toolchain-*/bin/*,/home/ingus/.platformio/packages/tool-*/bin/*"
+    ]
+}
