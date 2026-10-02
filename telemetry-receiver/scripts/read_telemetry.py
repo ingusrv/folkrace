@@ -191,9 +191,12 @@ def main():
 
                 if not args.quiet:
                     color = ROBOT_COLORS.get(robot_name, "\033[97m")
+                    flags = data.get("flags", 0)
+                    dir_str = "CW " if (flags & 4) else "CCW"
                     print(
                         f"[{color}{robot_name:<12}{COLOR_RESET}] "
                         f"[{data.get('time', 0):>7} ms] "
+                        f"Dir: {dir_str} "
                         f"State: {data.get('state', 'UNKNOWN'):<12} "
                         f"Dist: (F:{data.get('dist_front', 0):>4}, R:{data.get('dist_right', 0):>4}, L:{data.get('dist_left', 0):>4}) "
                         f"Side: (FL:{data.get('dist_side_fl', 0):>4}, RL:{data.get('dist_side_rl', 0):>4}, FR:{data.get('dist_side_fr', 0):>4}, RR:{data.get('dist_side_rr', 0):>4}) "
