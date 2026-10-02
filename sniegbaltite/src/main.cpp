@@ -2,7 +2,6 @@
 #include "config.h"
 #include "control/pid.h"
 #include "control/slew_rate_limiter.h"
-#include "control/stanley.h"
 #include "driver/bmi088.h"
 #include "driver/esc.h"
 #include "driver/servo.h"
@@ -21,9 +20,6 @@ ESC drive_motor = ESC(pin::esc);
 Servo steer_servo = Servo(pin::servo);
 BMI088Driver imu = BMI088Driver(Wire);
 RobotState state = {};
-
-static StanleyConfig stanley_cfg;
-static StanleyController stanley_controller;
 
 static SlewRateLimiter throttle_limiter(config::throttle_slew_rate_accel,
                                         config::throttle_slew_rate_decel);
@@ -229,33 +225,8 @@ static void init_espnow() {
   }
 }
 
-void init_stanley() {
-  stanley_cfg.sensor_baseline_mm = config::stanley_sensor_baseline_mm;
-  stanley_cfg.k_heading = state.steering_pid.Ki;
-  stanley_cfg.k_cte = state.steering_pid.Kp;
-  stanley_cfg.k_soft = config::stanley_k_soft;
-  stanley_cfg.k_d = state.steering_pid.Kd;
-  stanley_cfg.max_steer_rad = config::stanley_max_steer_rad;
-  stanley_cfg.target_wall_dist_mm = config::stanley_target_wall_dist_mm;
-  stanley_cfg.max_valid_dist_mm = config::stanley_max_valid_dist_mm;
-  stanley_cfg.max_delta_mm = config::stanley_max_delta_mm;
-  stanley_cfg.side_danger_dist_mm = config::side_danger_dist;
-  stanley_cfg.heading_filter_alpha = config::stanley_heading_ema_alpha;
-  stanley_controller.setConfig(stanley_cfg);
-}
-
 void setup() {
   load_robot_prefs(state);
-
-  // If steering gains are at default unconfigured values, initialize with
-  // Stanley defaults
-  if (state.steering_pid.Kp == 1.0f && state.steering_pid.Ki == 0.0f &&
-      state.steering_pid.Kd == 0.0f) {
-    state.steering_pid.Kp = config::stanley_k_cte;
-    state.steering_pid.Ki = config::stanley_k_heading;
-    state.steering_pid.Kd = config::stanley_k_d;
-  }
-  init_stanley();
 
   xTaskCreatePinnedToCore(tof_led_task, "tof_led_task", 2048, NULL, 1,
                           &tof_led_task_handle, 0);
@@ -288,8 +259,8 @@ void setup() {
   pinMode(pin::direction_switch, INPUT_PULLUP);
 
   state.track_direction = (digitalRead(pin::direction_switch) == LOW)
-                              ? TrackDirection::CLOCKWISE
-                              : TrackDirection::COUNTER_CLOCKWISE;
+                              ? TrackDirection::COUNTER_CLOCKWISE
+                              : TrackDirection::CLOCKWISE;
   Serial.printf("[DIRECTION] Track direction: %s (switch pin %d = %s)\n",
                 track_direction_to_str(state.track_direction),
                 pin::direction_switch,
@@ -422,10 +393,24 @@ void loop() {
                    (state.current_time_us - last_slope_us <
                     static_cast<uint32_t>(config::slope_hold_ms) * 1000));
 
-    // Read toggle switch position (live reading)
-    state.track_direction = (digitalRead(pin::direction_switch) == LOW)
-                                ? TrackDirection::CLOCKWISE
-                                : TrackDirection::COUNTER_CLOCKWISE;
+    // Read toggle switch position (live reading with transition detection)
+    TrackDirection current_direction =
+        (digitalRead(pin::direction_switch) == LOW)
+            ? TrackDirection::COUNTER_CLOCKWISE
+            : TrackDirection::CLOCKWISE;
+    if (current_direction != state.track_direction) {
+      state.track_direction = current_direction;
+      max_forward_yaw = state.imu.yaw;
+      min_forward_yaw = state.imu.yaw;
+      wrong_way_start_us = 0;
+      state.wrong_way_detected = false;
+      reset_pid(state.steering_pid);
+      if (state.running_state == RunningState::WRONG_WAY_RECOVERY) {
+        state.running_state = RunningState::RUNNING;
+      }
+      Serial.printf("[DIRECTION] Switched track direction to: %s\n",
+                    track_direction_to_str(state.track_direction));
+    }
 
     // Read VL53L0X ToF distance sensors when ready
     if (is_tof_data_ready(sensor_front)) {
@@ -515,7 +500,6 @@ void loop() {
         imu.startCalibration();
       } else if (state.running_state == RunningState::IDLE) {
         reset_pid(state.steering_pid);
-        stanley_controller.reset();
         throttle_limiter.reset(0.0f);
         steering_limiter.reset(0.0f);
         obstacle_detected = false;
@@ -524,8 +508,6 @@ void loop() {
         last_slope_us = 0;
         is_on_slope = false;
       } else if (state.running_state == RunningState::REVERSE_TURN) {
-        // Reverse-turn in the direction of the track so the nose swings towards
-        // the correct race flow (swings left for CCW, right for CW).
         reverse_turn_steering =
             (state.track_direction == TrackDirection::CLOCKWISE) ? 1.0f : -1.0f;
       } else if (state.running_state == RunningState::WRONG_WAY_RECOVERY) {
@@ -558,7 +540,6 @@ void loop() {
         is_on_slope = false;
         state.running_state = RunningState::RUNNING;
         reset_pid(state.steering_pid);
-        stanley_controller.reset();
         obstacle_detected = false;
         max_forward_yaw = state.imu.yaw;
         min_forward_yaw = state.imu.yaw;
@@ -603,8 +584,8 @@ void loop() {
           state.running_state = RunningState::REVERSE;
           state.maneuver_start_us = state.current_time_us;
           reverse_turn_steering =
-              (state.track_direction == TrackDirection::CLOCKWISE) ? 1.0f
-                                                                   : -1.0f;
+              (state.track_direction == TrackDirection::CLOCKWISE) ? -1.0f
+                                                                   : 1.0f;
           obstacle_detected = false;
           break;
         }
@@ -612,74 +593,21 @@ void loop() {
         obstacle_detected = false;
       }
 
-      // 1. Stanley Controller update using 110mm side sensor pairs
-      stanley_cfg.k_cte = state.steering_pid.Kp;
-      stanley_cfg.k_heading = state.steering_pid.Ki;
-      stanley_cfg.k_d = state.steering_pid.Kd;
-      stanley_controller.setConfig(stanley_cfg);
+      float raw_diff = static_cast<float>(dist_front_right) -
+                       static_cast<float>(dist_front_left);
+      float steer_normalized =
+          constrain(raw_diff / config::sensor_range, -1.0f, 1.0f);
+      state.steering_pid.error = steer_normalized + state.steering_pid.offset;
 
-      StanleyOutput stanley_out = stanley_controller.update(
-          dist_front_left, dist_rear_left, dist_front_right, dist_rear_right,
-          state.current_throttle, state.imu.gyro_z, delta_time);
+      // turn left = -1.0 turn right = 1.0
+      state.target_steering = update_pid(delta_time, state.steering_pid);
 
-      float stanley_steer = stanley_out.steering_cmd;
-
-      // Fallback: If neither side wall pair was valid, fall back to diagonal
-      // front sensors (dist_left/dist_right)
-      if (!stanley_out.left_wall_valid && !stanley_out.right_wall_valid) {
-        float raw_diff = static_cast<float>(state.dist_right) -
-                         static_cast<float>(state.dist_left);
-        stanley_steer =
-            constrain(raw_diff / config::side_turn_range, -1.0f, 1.0f);
-        if (state.dist_left < config::side_danger_dist) {
-          stanley_steer +=
-              static_cast<float>(config::side_danger_dist - state.dist_left) /
-              static_cast<float>(config::side_danger_dist);
-        }
-        if (state.dist_right < config::side_danger_dist) {
-          stanley_steer -=
-              static_cast<float>(config::side_danger_dist - state.dist_right) /
-              static_cast<float>(config::side_danger_dist);
-        }
-        stanley_steer = constrain(stanley_steer, -1.0f, 1.0f);
-      }
-
-      // 2. Front obstacle / corner anticipation
-      float front_urgency = 0.0f;
-      float turn_dir = (state.dist_right >= state.dist_left) ? 1.0f : -1.0f;
-
-      if (state.dist_front < config::front_turn_dist) {
-        front_urgency =
-            static_cast<float>(config::front_turn_dist - state.dist_front) /
-            static_cast<float>(config::front_turn_dist -
-                               config::front_critical_dist);
-        front_urgency = constrain(front_urgency, 0.0f, 1.0f);
-      }
-
-      // Blend side guidance and front cornering
-      float raw_steer_target =
-          (1.0f - front_urgency) *
-              constrain(stanley_steer + state.steering_pid.offset, -1.0f,
-                        1.0f) +
-          (front_urgency * turn_dir);
-      raw_steer_target = constrain(raw_steer_target, -1.0f, 1.0f);
-
-      // Record steering command & telemetry (heading error in deg, CTE in mm)
-      state.target_steering = raw_steer_target;
-      state.steering_pid.error = stanley_out.heading_error_deg;
-      state.steering_pid.integral = stanley_out.cte_m * 1000.0f;
-      state.steering_pid.derivative = stanley_steer;
-
-      // 4. Throttle control with corner slowing
       float throttle = state.base_throttle;
-      if (!is_on_slope && state.dist_far > 0 &&
-          state.dist_front > state.dist_far) {
+      if (state.dist_far > 0 && state.dist_front > state.dist_far) {
         throttle = state.straight_throttle;
       }
-      // Slow down when entering a corner so front wheels grip and don't
-      // understeer
-      float corner_speed_factor = 1.0f - 0.45f * front_urgency;
-      state.target_throttle = throttle * corner_speed_factor;
+      state.target_throttle = throttle;
+
       break;
     }
 
@@ -691,7 +619,7 @@ void loop() {
         state.running_state = RunningState::REVERSE_TURN;
         state.maneuver_start_us = state.current_time_us;
         reverse_turn_steering =
-            (state.track_direction == TrackDirection::CLOCKWISE) ? 1.0f : -1.0f;
+            (state.track_direction == TrackDirection::CLOCKWISE) ? -1.0f : 1.0f;
       }
       break;
 
@@ -702,7 +630,6 @@ void loop() {
       if (state.current_time_us - state.maneuver_start_us >=
           static_cast<uint32_t>(config::reverse_turn_duration_ms) * 1000) {
         reset_pid(state.steering_pid);
-        stanley_controller.reset();
         obstacle_detected = false;
         state.running_state = RunningState::RUNNING;
       }
@@ -730,7 +657,6 @@ void loop() {
         state.wrong_way_detected = false;
         wrong_way_start_us = 0;
         reset_pid(state.steering_pid);
-        stanley_controller.reset();
         obstacle_detected = false;
         state.running_state = RunningState::RUNNING;
         break;
@@ -785,7 +711,6 @@ void loop() {
           state.wrong_way_detected = false;
           wrong_way_start_us = 0;
           reset_pid(state.steering_pid);
-          stanley_controller.reset();
           obstacle_detected = false;
           state.running_state = RunningState::RUNNING;
         }
