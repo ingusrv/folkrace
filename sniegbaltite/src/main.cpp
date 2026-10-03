@@ -593,20 +593,118 @@ void loop() {
         obstacle_detected = false;
       }
 
-      float raw_diff = static_cast<float>(dist_front_right) -
-                       static_cast<float>(dist_front_left);
-      float steer_normalized =
-          constrain(raw_diff / config::sensor_range, -1.0f, 1.0f);
-      state.steering_pid.error = steer_normalized + state.steering_pid.offset;
+      // 1. Diagonal front sensors lateral centering (positive = steer right
+      // away from left wall)
+      float diag_diff = static_cast<float>(state.dist_right) -
+                        static_cast<float>(state.dist_left);
+      float steer_diag =
+          constrain(diag_diff / config::side_turn_range, -1.0f, 1.0f);
 
-      // turn left = -1.0 turn right = 1.0
+      // 2. Side sensors (FL, RL, FR, RR) centering & orientation compensation
+      uint16_t side_left = std::min(dist_front_left, dist_rear_left);
+      uint16_t side_right = std::min(dist_front_right, dist_rear_right);
+
+      bool side_left_valid = (side_left < config::sensor_max_raw);
+      bool side_right_valid = (side_right < config::sensor_max_raw);
+
+      float steer_side = 0.0f;
+      if (side_left_valid && side_right_valid) {
+        // Centering between two side walls
+        float side_diff =
+            static_cast<float>(side_right) - static_cast<float>(side_left);
+        steer_side =
+            constrain(side_diff / config::side_turn_range, -1.0f, 1.0f);
+      } else if (side_left_valid) {
+        // Only left side wall visible: push away if closer than side_turn_range
+        if (side_left < static_cast<uint16_t>(config::side_turn_range)) {
+          steer_side =
+              (config::side_turn_range - static_cast<float>(side_left)) /
+              config::side_turn_range;
+        }
+      } else if (side_right_valid) {
+        // Only right side wall visible: push away if closer than
+        // side_turn_range
+        if (side_right < static_cast<uint16_t>(config::side_turn_range)) {
+          steer_side =
+              -(config::side_turn_range - static_cast<float>(side_right)) /
+              config::side_turn_range;
+        }
+      }
+
+      // Side orientation alignment: steer away if car is angled towards a side
+      // wall
+      float steer_side_angle = 0.0f;
+      if (dist_front_left < config::sensor_max_raw &&
+          dist_rear_left < config::sensor_max_raw) {
+        // Nose pointing into left wall: rear is farther than front
+        float diff = static_cast<float>(dist_rear_left) -
+                     static_cast<float>(dist_front_left);
+        steer_side_angle += constrain(diff / 150.0f, -0.5f, 0.5f);
+      }
+      if (dist_front_right < config::sensor_max_raw &&
+          dist_rear_right < config::sensor_max_raw) {
+        // Nose pointing into right wall: rear is farther than front
+        float diff = static_cast<float>(dist_front_right) -
+                     static_cast<float>(dist_rear_right);
+        steer_side_angle += constrain(diff / 150.0f, -0.5f, 0.5f);
+      }
+
+      // Combine diagonal guidance and side guidance
+      float steer_guidance;
+      if (side_left_valid || side_right_valid) {
+        steer_guidance =
+            0.5f * steer_diag + 0.5f * (steer_side + steer_side_angle);
+      } else {
+        steer_guidance = steer_diag;
+      }
+
+      // 3. Emergency wall danger repulsion (checks both diagonal and side
+      // sensors)
+      float steer_repel = 0.0f;
+      uint16_t min_left = std::min(side_left, state.dist_left);
+      uint16_t min_right = std::min(side_right, state.dist_right);
+
+      if (min_left < config::side_danger_dist) {
+        steer_repel += static_cast<float>(config::side_danger_dist - min_left) /
+                       static_cast<float>(config::side_danger_dist);
+      }
+      if (min_right < config::side_danger_dist) {
+        steer_repel -=
+            static_cast<float>(config::side_danger_dist - min_right) /
+            static_cast<float>(config::side_danger_dist);
+      }
+
+      // 4. Front obstacle / corner anticipation
+      float front_urgency = 0.0f;
+      float turn_dir = (state.dist_right >= state.dist_left) ? 1.0f : -1.0f;
+
+      if (state.dist_front < config::front_turn_dist) {
+        front_urgency =
+            static_cast<float>(config::front_turn_dist - state.dist_front) /
+            static_cast<float>(config::front_turn_dist -
+                               config::front_critical_dist);
+        front_urgency = constrain(front_urgency, 0.0f, 1.0f);
+      }
+
+      // Blend side guidance/repulsion and front cornering
+      float raw_steer_target =
+          (1.0f - front_urgency) *
+              constrain(steer_guidance + steer_repel, -1.0f, 1.0f) +
+          (front_urgency * turn_dir);
+      raw_steer_target = constrain(raw_steer_target, -1.0f, 1.0f);
+
+      // Steering PID update (includes trim offset)
+      state.steering_pid.error = raw_steer_target + state.steering_pid.offset;
       state.target_steering = update_pid(delta_time, state.steering_pid);
 
+      // 5. Throttle control with corner slowing
       float throttle = state.base_throttle;
-      if (state.dist_far > 0 && state.dist_front > state.dist_far) {
+      if (!is_on_slope && state.dist_far > 0 &&
+          state.dist_front > state.dist_far) {
         throttle = state.straight_throttle;
       }
-      state.target_throttle = throttle;
+      float corner_speed_factor = 1.0f - 0.45f * front_urgency;
+      state.target_throttle = throttle * corner_speed_factor;
 
       break;
     }
