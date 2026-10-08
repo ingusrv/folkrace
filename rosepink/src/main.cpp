@@ -514,9 +514,6 @@ static void send_telemetry() {
   if (state.track_direction == TrackDirection::CLOCKWISE) {
     flags |= (1 << 2);
   }
-  if (state.wrong_way_detected) {
-    flags |= (1 << 3);
-  }
   if (is_on_slope) {
     flags |= (1 << 4);
   }
@@ -591,7 +588,6 @@ void loop() {
       max_forward_yaw = state.imu.yaw;
       min_forward_yaw = state.imu.yaw;
       wrong_way_start_us = 0;
-      state.wrong_way_detected = false;
       reset_pid(state.steering_pid);
       if (state.running_state == RunningState::WRONG_WAY_RECOVERY) {
         state.running_state = RunningState::RUNNING;
@@ -675,7 +671,6 @@ void loop() {
         throttle_limiter.reset(0.0f);
         steering_limiter.reset(0.0f);
         obstacle_detected = false;
-        state.wrong_way_detected = false;
         wrong_way_start_us = 0;
         last_slope_us = 0;
         is_on_slope = false;
@@ -716,26 +711,22 @@ void loop() {
         max_forward_yaw = state.imu.yaw;
         min_forward_yaw = state.imu.yaw;
         wrong_way_start_us = 0;
-        state.wrong_way_detected = false;
       }
       break;
 
     case RunningState::RUNNING: {
       // Wrong-way check
       if (yaw_deviation > config::wrong_way_yaw_threshold_deg) {
-        if (!state.wrong_way_detected) {
-          if (wrong_way_start_us == 0) {
-            wrong_way_start_us = state.current_time_us;
-          } else if (state.current_time_us - wrong_way_start_us >=
-                     static_cast<uint32_t>(config::wrong_way_debounce_ms) *
-                         1000) {
-            state.wrong_way_detected = true;
-            state.running_state = RunningState::WRONG_WAY_RECOVERY;
-            state.maneuver_start_us = state.current_time_us;
-            recovery_phase = 1;
-            recovery_phase_start_us = state.current_time_us;
-            break;
-          }
+        if (wrong_way_start_us == 0) {
+          wrong_way_start_us = state.current_time_us;
+        } else if (state.current_time_us - wrong_way_start_us >=
+                   static_cast<uint32_t>(config::wrong_way_debounce_ms) *
+                       1000) {
+          state.running_state = RunningState::WRONG_WAY_RECOVERY;
+          state.maneuver_start_us = state.current_time_us;
+          recovery_phase = 1;
+          recovery_phase_start_us = state.current_time_us;
+          break;
         }
       } else {
         wrong_way_start_us = 0;
@@ -925,7 +916,6 @@ void loop() {
         } else {
           min_forward_yaw = state.imu.yaw;
         }
-        state.wrong_way_detected = false;
         wrong_way_start_us = 0;
         reset_pid(state.steering_pid);
         obstacle_detected = false;
@@ -979,7 +969,6 @@ void loop() {
           } else {
             min_forward_yaw = state.imu.yaw;
           }
-          state.wrong_way_detected = false;
           wrong_way_start_us = 0;
           reset_pid(state.steering_pid);
           obstacle_detected = false;

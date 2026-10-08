@@ -45,7 +45,6 @@ inline const char *track_direction_to_str(TrackDirection d) {
   }
 }
 
-
 struct PIDState {
   float Kp;
   float Ki;
@@ -100,5 +99,4 @@ struct RobotState {
   IMUState imu;
 
   TrackDirection track_direction;
-  bool wrong_way_detected;
 };
