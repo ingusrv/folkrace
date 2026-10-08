@@ -35,11 +35,6 @@ VL53L0X sensor_front_right;
 VL53L0X sensor_rear_left;
 VL53L0X sensor_rear_right;
 
-static uint16_t dist_front_left = config::sensor_max_raw;
-static uint16_t dist_front_right = config::sensor_max_raw;
-static uint16_t dist_rear_left = config::sensor_max_raw;
-static uint16_t dist_rear_right = config::sensor_max_raw;
-
 static uint32_t countdown_start_ms = 0;
 static uint32_t obstacle_start_us = 0;
 static bool obstacle_detected = false;
@@ -56,20 +51,45 @@ static float flat_pitch = 0.0f;
 static bool is_on_slope = false;
 static uint32_t last_slope_us = 0;
 
-static TaskHandle_t tof_led_task_handle = nullptr;
-static volatile bool tof_recovering = true;
+static TaskHandle_t led_blink_task_handle = nullptr;
+static volatile bool led_blinking = false;
+static volatile uint8_t led_blink_r = 0;
+static volatile uint8_t led_blink_g = 0;
+static volatile uint8_t led_blink_b = 0;
+static volatile uint32_t led_blink_interval_ms = 150;
 
-static void tof_led_task(void *pvParameters) {
+static void start_led_blink(uint8_t r, uint8_t g, uint8_t b,
+                            uint32_t interval_ms = 150) {
+  if (!led_blinking || led_blink_r != r || led_blink_g != g ||
+      led_blink_b != b || led_blink_interval_ms != interval_ms) {
+    led_blink_r = r;
+    led_blink_g = g;
+    led_blink_b = b;
+    led_blink_interval_ms = interval_ms;
+    led_blinking = true;
+  }
+}
+
+static void stop_led_blink() {
+  if (led_blinking) {
+    led_blinking = false;
+    if (led_blink_task_handle != nullptr) {
+      xTaskAbortDelay(led_blink_task_handle);
+    }
+  }
+}
+
+static void led_blink_task(void *pvParameters) {
   bool led_on = false;
   while (true) {
-    if (tof_recovering) {
+    if (led_blinking) {
       led_on = !led_on;
       if (led_on) {
-        rgbLedWrite(pin::rgb_led_pin, config::rgb_led_brightness, 0, 0);
+        rgbLedWrite(pin::rgb_led_pin, led_blink_r, led_blink_g, led_blink_b);
       } else {
         rgbLedWrite(pin::rgb_led_pin, 0, 0, 0);
       }
-      vTaskDelay(pdMS_TO_TICKS(150));
+      vTaskDelay(pdMS_TO_TICKS(led_blink_interval_ms));
     } else {
       if (led_on) {
         led_on = false;
@@ -80,126 +100,175 @@ static void tof_led_task(void *pvParameters) {
   }
 }
 
-void init_tof() {
-  pinMode(pin::xshut_left, OUTPUT);
-  pinMode(pin::xshut_right, OUTPUT);
+constexpr uint32_t TOF_INIT_MAIN_BIT = (1 << 0);
+constexpr uint32_t TOF_INIT_SIDE_BIT = (1 << 1);
 
-  digitalWrite(pin::xshut_left, LOW);
-  digitalWrite(pin::xshut_right, LOW);
+static TaskHandle_t tof_init_task_handle = nullptr;
+static volatile bool main_tof_initializing = false;
+static volatile bool side_tof_initializing = false;
 
-  delay(10);
+static void tof_init_task(void *pvParameters) {
+  uint32_t notify_bits = 0;
+  while (true) {
+    if (xTaskNotifyWait(0, UINT32_MAX, &notify_bits, portMAX_DELAY) == pdTRUE) {
+      if (notify_bits & TOF_INIT_MAIN_BIT) {
+        pinMode(pin::xshut_left, OUTPUT);
+        pinMode(pin::xshut_right, OUTPUT);
 
-  // Front sensor: if power was lost, it reset to default 0x29; if power was
-  // retained, it's at 0x30
-  if (sensor_front.getAddress() != 0x30) {
-    sensor_front.setAddress(0x30);
-  } else {
-    sensor_front.setAddress(0x30);
-    if (sensor_front.last_status != 0) {
-      sensor_front = VL53L0X();
-      sensor_front.setAddress(0x30);
+        digitalWrite(pin::xshut_left, LOW);
+        digitalWrite(pin::xshut_right, LOW);
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+        // Front sensor: if power was lost, it reset to default 0x29; if power
+        // was retained, it's at 0x30
+        if (sensor_front.getAddress() != 0x30) {
+          sensor_front.setAddress(0x30);
+        } else {
+          sensor_front.setAddress(0x30);
+          if (sensor_front.last_status != 0) {
+            sensor_front = VL53L0X();
+            sensor_front.setAddress(0x30);
+          }
+        }
+        if (sensor_front.init()) {
+          sensor_front.setTimeout(100);
+          sensor_front.setMeasurementTimingBudget(config::tof_timing_budget_us);
+          sensor_front.startContinuous();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5));
+
+        pinMode(pin::xshut_left, INPUT);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        sensor_left = VL53L0X();
+        sensor_left.setAddress(0x32);
+        if (sensor_left.init()) {
+          sensor_left.setTimeout(100);
+          sensor_left.setMeasurementTimingBudget(config::tof_timing_budget_us);
+          sensor_left.startContinuous();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5));
+
+        pinMode(pin::xshut_right, INPUT);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        sensor_right = VL53L0X();
+        sensor_right.setAddress(0x31);
+        if (sensor_right.init()) {
+          sensor_right.setTimeout(100);
+          sensor_right.setMeasurementTimingBudget(config::tof_timing_budget_us);
+          sensor_right.startContinuous();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+        main_tof_initializing = false;
+        Serial.printf("[TOF] Re-initialization finished (f=%d l=%d r=%d)\n",
+                      sensor_front.last_status, sensor_left.last_status,
+                      sensor_right.last_status);
+      }
+      if (notify_bits & TOF_INIT_SIDE_BIT) {
+        pinMode(pin::xshut_front_left, OUTPUT);
+        pinMode(pin::xshut_front_right, OUTPUT);
+        pinMode(pin::xshut_rear_right, OUTPUT);
+
+        digitalWrite(pin::xshut_front_left, LOW);
+        digitalWrite(pin::xshut_front_right, LOW);
+        digitalWrite(pin::xshut_rear_right, LOW);
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+        // Rear left has no XSHUT, so it is the only active sensor on Wire1.
+        // Address it first (handles both initial boot at 0x29 or re-init if
+        // power retained at 0x30).
+        sensor_rear_left.setBus(&Wire1);
+        if (sensor_rear_left.getAddress() != 0x30) {
+          sensor_rear_left.setAddress(0x30);
+        } else {
+          sensor_rear_left.setAddress(0x30);
+          if (sensor_rear_left.last_status != 0) {
+            sensor_rear_left = VL53L0X();
+            sensor_rear_left.setBus(&Wire1);
+            sensor_rear_left.setAddress(0x30);
+          }
+        }
+        if (sensor_rear_left.init()) {
+          sensor_rear_left.setTimeout(100);
+          sensor_rear_left.setMeasurementTimingBudget(
+              config::tof_timing_budget_us);
+          sensor_rear_left.startContinuous();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5));
+
+        // Front left
+        pinMode(pin::xshut_front_left, INPUT);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        sensor_front_left = VL53L0X();
+        sensor_front_left.setBus(&Wire1);
+        sensor_front_left.setAddress(0x31);
+        if (sensor_front_left.init()) {
+          sensor_front_left.setTimeout(100);
+          sensor_front_left.setMeasurementTimingBudget(
+              config::tof_timing_budget_us);
+          sensor_front_left.startContinuous();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5));
+
+        // Front right
+        pinMode(pin::xshut_front_right, INPUT);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        sensor_front_right = VL53L0X();
+        sensor_front_right.setBus(&Wire1);
+        sensor_front_right.setAddress(0x32);
+        if (sensor_front_right.init()) {
+          sensor_front_right.setTimeout(100);
+          sensor_front_right.setMeasurementTimingBudget(
+              config::tof_timing_budget_us);
+          sensor_front_right.startContinuous();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5));
+
+        // Rear right
+        pinMode(pin::xshut_rear_right, INPUT);
+        vTaskDelay(pdMS_TO_TICKS(10));
+        sensor_rear_right = VL53L0X();
+        sensor_rear_right.setBus(&Wire1);
+        sensor_rear_right.setAddress(0x33);
+        if (sensor_rear_right.init()) {
+          sensor_rear_right.setTimeout(100);
+          sensor_rear_right.setMeasurementTimingBudget(
+              config::tof_timing_budget_us);
+          sensor_rear_right.startContinuous();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+
+        side_tof_initializing = false;
+        Serial.printf(
+            "[TOF-SIDE] Re-initialization finished (rl=%d fl=%d fr=%d rr=%d)\n",
+            sensor_rear_left.last_status, sensor_front_left.last_status,
+            sensor_front_right.last_status, sensor_rear_right.last_status);
+      }
     }
   }
-  sensor_front.init();
-  sensor_front.setTimeout(100);
-  sensor_front.setMeasurementTimingBudget(config::tof_timing_budget_us);
-  sensor_front.startContinuous();
-
-  delay(5);
-
-  pinMode(pin::xshut_left, INPUT);
-  delay(10);
-  sensor_left = VL53L0X();
-  sensor_left.setAddress(0x32);
-  sensor_left.init();
-  sensor_left.setTimeout(100);
-  sensor_left.setMeasurementTimingBudget(config::tof_timing_budget_us);
-  sensor_left.startContinuous();
-
-  delay(5);
-
-  pinMode(pin::xshut_right, INPUT);
-  delay(10);
-  sensor_right = VL53L0X();
-  sensor_right.setAddress(0x31);
-  sensor_right.init();
-  sensor_right.setTimeout(100);
-  sensor_right.setMeasurementTimingBudget(config::tof_timing_budget_us);
-  sensor_right.startContinuous();
-
-  delay(10);
 }
 
-void init_side_tof() {
-  pinMode(pin::xshut_front_left, OUTPUT);
-  pinMode(pin::xshut_front_right, OUTPUT);
-  pinMode(pin::xshut_rear_right, OUTPUT);
-
-  digitalWrite(pin::xshut_front_left, LOW);
-  digitalWrite(pin::xshut_front_right, LOW);
-  digitalWrite(pin::xshut_rear_right, LOW);
-
-  delay(10);
-
-  // Rear left has no XSHUT, so it is the only active sensor on Wire1.
-  // Address it first (handles both initial boot at 0x29 or re-init if power
-  // retained at 0x30).
-  sensor_rear_left.setBus(&Wire1);
-  if (sensor_rear_left.getAddress() != 0x30) {
-    sensor_rear_left.setAddress(0x30);
-  } else {
-    sensor_rear_left.setAddress(0x30);
-    if (sensor_rear_left.last_status != 0) {
-      sensor_rear_left = VL53L0X();
-      sensor_rear_left.setBus(&Wire1);
-      sensor_rear_left.setAddress(0x30);
-    }
+static void request_tof_init() {
+  if (!main_tof_initializing && tof_init_task_handle != nullptr) {
+    main_tof_initializing = true;
+    xTaskNotify(tof_init_task_handle, TOF_INIT_MAIN_BIT, eSetBits);
   }
-  sensor_rear_left.init();
-  sensor_rear_left.setTimeout(100);
-  sensor_rear_left.setMeasurementTimingBudget(config::tof_timing_budget_us);
-  sensor_rear_left.startContinuous();
+}
 
-  delay(5);
-
-  // Front left
-  pinMode(pin::xshut_front_left, INPUT);
-  delay(10);
-  sensor_front_left = VL53L0X();
-  sensor_front_left.setBus(&Wire1);
-  sensor_front_left.setAddress(0x31);
-  sensor_front_left.init();
-  sensor_front_left.setTimeout(100);
-  sensor_front_left.setMeasurementTimingBudget(config::tof_timing_budget_us);
-  sensor_front_left.startContinuous();
-
-  delay(5);
-
-  // Front right
-  pinMode(pin::xshut_front_right, INPUT);
-  delay(10);
-  sensor_front_right = VL53L0X();
-  sensor_front_right.setBus(&Wire1);
-  sensor_front_right.setAddress(0x32);
-  sensor_front_right.init();
-  sensor_front_right.setTimeout(100);
-  sensor_front_right.setMeasurementTimingBudget(config::tof_timing_budget_us);
-  sensor_front_right.startContinuous();
-
-  delay(5);
-
-  // Rear right
-  pinMode(pin::xshut_rear_right, INPUT);
-  delay(10);
-  sensor_rear_right = VL53L0X();
-  sensor_rear_right.setBus(&Wire1);
-  sensor_rear_right.setAddress(0x33);
-  sensor_rear_right.init();
-  sensor_rear_right.setTimeout(100);
-  sensor_rear_right.setMeasurementTimingBudget(config::tof_timing_budget_us);
-  sensor_rear_right.startContinuous();
-
-  delay(10);
+static void request_side_tof_init() {
+  if (!side_tof_initializing && tof_init_task_handle != nullptr) {
+    side_tof_initializing = true;
+    xTaskNotify(tof_init_task_handle, TOF_INIT_SIDE_BIT, eSetBits);
+  }
 }
 
 static void init_espnow() {
@@ -228,11 +297,13 @@ static void init_espnow() {
 void setup() {
   load_robot_prefs(state);
 
-  xTaskCreatePinnedToCore(tof_led_task, "tof_led_task", 2048, NULL, 1,
-                          &tof_led_task_handle, 0);
+  xTaskCreatePinnedToCore(led_blink_task, "led_blink_task", 2048, NULL, 1,
+                          &led_blink_task_handle, 0);
 
   Wire.begin(pin::sda, pin::scl, 400000);
+  Wire.setTimeOut(25);
   Wire1.begin(pin::sda_side, pin::scl_side, 400000);
+  Wire1.setTimeOut(25);
   Serial.begin(115200);
 
   if (!imu.begin()) {
@@ -246,15 +317,11 @@ void setup() {
   drive_motor.init();
   steer_servo.init();
 
-  init_tof();
-  init_side_tof();
+  xTaskCreatePinnedToCore(tof_init_task, "tof_init_task", 4096, NULL, 1,
+                          &tof_init_task_handle, 0);
 
-  tof_recovering =
-      (sensor_front.last_status != 0 || sensor_left.last_status != 0 ||
-       sensor_right.last_status != 0 || sensor_rear_left.last_status != 0 ||
-       sensor_front_left.last_status != 0 ||
-       sensor_front_right.last_status != 0 ||
-       sensor_rear_right.last_status != 0);
+  request_tof_init();
+  request_side_tof_init();
 
   pinMode(pin::direction_switch, INPUT_PULLUP);
 
@@ -325,9 +392,6 @@ static void send_telemetry() {
   }
   if (state.track_direction == TrackDirection::CLOCKWISE) {
     flags |= (1 << 2);
-  }
-  if (state.wrong_way_detected) {
-    flags |= (1 << 3);
   }
   if (is_on_slope) {
     flags |= (1 << 4);
@@ -412,54 +476,63 @@ void loop() {
     }
 
     // Read VL53L0X ToF distance sensors when ready
-    if (is_tof_data_ready(sensor_front)) {
-      state.dist_front = read_clamped_sensor(sensor_front);
-    }
-    if (is_tof_data_ready(sensor_left)) {
-      state.dist_left = read_clamped_sensor(sensor_left);
-    }
-    if (is_tof_data_ready(sensor_right)) {
-      state.dist_right = read_clamped_sensor(sensor_right);
+    if (!main_tof_initializing) {
+      if (is_tof_data_ready(sensor_front)) {
+        state.dist_front = read_clamped_sensor(sensor_front);
+      }
+      if (is_tof_data_ready(sensor_left)) {
+        state.dist_left = read_clamped_sensor(sensor_left);
+      }
+      if (is_tof_data_ready(sensor_right)) {
+        state.dist_right = read_clamped_sensor(sensor_right);
+      }
+    } else {
+      state.dist_front = config::sensor_max_raw;
+      state.dist_left = config::sensor_max_raw;
+      state.dist_right = config::sensor_max_raw;
     }
 
     // Read side ToF distance sensors (Wire1) when ready
-    if (is_tof_data_ready(sensor_front_left)) {
-      dist_front_left = read_clamped_sensor(sensor_front_left);
-      state.dist_side_front_left = dist_front_left;
-    }
-    if (is_tof_data_ready(sensor_front_right)) {
-      dist_front_right = read_clamped_sensor(sensor_front_right);
-      state.dist_side_front_right = dist_front_right;
-    }
-    if (is_tof_data_ready(sensor_rear_left)) {
-      dist_rear_left = read_clamped_sensor(sensor_rear_left);
-      state.dist_side_rear_left = dist_rear_left;
-    }
-    if (is_tof_data_ready(sensor_rear_right)) {
-      dist_rear_right = read_clamped_sensor(sensor_rear_right);
-      state.dist_side_rear_right = dist_rear_right;
+    if (!side_tof_initializing) {
+      if (is_tof_data_ready(sensor_front_left)) {
+        state.dist_side_front_left = read_clamped_sensor(sensor_front_left);
+      }
+      if (is_tof_data_ready(sensor_front_right)) {
+        state.dist_side_front_right = read_clamped_sensor(sensor_front_right);
+      }
+      if (is_tof_data_ready(sensor_rear_left)) {
+        state.dist_side_rear_left = read_clamped_sensor(sensor_rear_left);
+      }
+      if (is_tof_data_ready(sensor_rear_right)) {
+        state.dist_side_rear_right = read_clamped_sensor(sensor_rear_right);
+      }
+    } else {
+      state.dist_side_front_left = config::sensor_max_raw;
+      state.dist_side_front_right = config::sensor_max_raw;
+      state.dist_side_rear_left = config::sensor_max_raw;
+      state.dist_side_rear_right = config::sensor_max_raw;
     }
 
     bool main_tof_error =
+        !main_tof_initializing &&
         (sensor_front.last_status != 0 || sensor_left.last_status != 0 ||
          sensor_right.last_status != 0);
-    bool side_tof_error = (sensor_rear_left.last_status != 0 ||
-                           sensor_front_left.last_status != 0 ||
-                           sensor_front_right.last_status != 0 ||
-                           sensor_rear_right.last_status != 0);
-
-    tof_recovering = (main_tof_error || side_tof_error);
+    bool side_tof_error =
+        !side_tof_initializing && (sensor_rear_left.last_status != 0 ||
+                                   sensor_front_left.last_status != 0 ||
+                                   sensor_front_right.last_status != 0 ||
+                                   sensor_rear_right.last_status != 0);
 
     // Check if any ToF sensor lost connection (I2C transmission error)
     if (main_tof_error) {
       static uint32_t last_tof_reset_ms = 0;
-      if (state.current_time_ms - last_tof_reset_ms >= 250) {
+      if (state.current_time_ms - last_tof_reset_ms >= 500) {
         last_tof_reset_ms = state.current_time_ms;
         Serial.printf("[TOF] I2C error (f=%d l=%d r=%d). Re-initializing ToF "
                       "sensors...\n",
                       sensor_front.last_status, sensor_left.last_status,
                       sensor_right.last_status);
-        init_tof();
+        request_tof_init();
       }
     }
 
@@ -467,15 +540,23 @@ void loop() {
     // error)
     if (side_tof_error) {
       static uint32_t last_side_tof_reset_ms = 0;
-      if (state.current_time_ms - last_side_tof_reset_ms >= 250) {
+      if (state.current_time_ms - last_side_tof_reset_ms >= 500) {
         last_side_tof_reset_ms = state.current_time_ms;
         Serial.printf(
             "[TOF-SIDE] I2C error (rl=%d fl=%d fr=%d rr=%d). Re-initializing "
             "side ToF sensors...\n",
             sensor_rear_left.last_status, sensor_front_left.last_status,
             sensor_front_right.last_status, sensor_rear_right.last_status);
-        init_side_tof();
+        request_side_tof_init();
       }
+    }
+
+    // Manage LED blinking based on state
+    if (main_tof_initializing || side_tof_initializing) {
+      start_led_blink(config::rgb_led_brightness, 0, config::rgb_led_brightness,
+                      150);
+    } else {
+      stop_led_blink();
     }
 
     // Calculate progress frontier & yaw deviation based on track direction
@@ -548,16 +629,16 @@ void loop() {
     case RunningState::RUNNING: {
       // Wrong-way check
       if (yaw_deviation > config::wrong_way_yaw_threshold_deg) {
-          if (wrong_way_start_us == 0) {
-            wrong_way_start_us = state.current_time_us;
-          } else if (state.current_time_us - wrong_way_start_us >=
-                     static_cast<uint32_t>(config::wrong_way_debounce_ms) *
-                         1000) {
-            state.running_state = RunningState::WRONG_WAY_RECOVERY;
-            state.maneuver_start_us = state.current_time_us;
-            recovery_phase = 1;
-            recovery_phase_start_us = state.current_time_us;
-            break;
+        if (wrong_way_start_us == 0) {
+          wrong_way_start_us = state.current_time_us;
+        } else if (state.current_time_us - wrong_way_start_us >=
+                   static_cast<uint32_t>(config::wrong_way_debounce_ms) *
+                       1000) {
+          state.running_state = RunningState::WRONG_WAY_RECOVERY;
+          state.maneuver_start_us = state.current_time_us;
+          recovery_phase = 1;
+          recovery_phase_start_us = state.current_time_us;
+          break;
         }
       } else {
         wrong_way_start_us = 0;
@@ -595,8 +676,10 @@ void loop() {
           constrain(diag_diff / config::side_turn_range, -1.0f, 1.0f);
 
       // 2. Side sensors (FL, RL, FR, RR) centering & orientation compensation
-      uint16_t side_left = std::min(dist_front_left, dist_rear_left);
-      uint16_t side_right = std::min(dist_front_right, dist_rear_right);
+      uint16_t side_left =
+          std::min(state.dist_side_front_left, state.dist_side_rear_left);
+      uint16_t side_right =
+          std::min(state.dist_side_front_right, state.dist_side_rear_right);
 
       bool side_left_valid = (side_left < config::sensor_max_raw);
       bool side_right_valid = (side_right < config::sensor_max_raw);
@@ -628,18 +711,18 @@ void loop() {
       // Side orientation alignment: steer away if car is angled towards a side
       // wall
       float steer_side_angle = 0.0f;
-      if (dist_front_left < config::sensor_max_raw &&
-          dist_rear_left < config::sensor_max_raw) {
+      if (state.dist_side_front_left < config::sensor_max_raw &&
+          state.dist_side_rear_left < config::sensor_max_raw) {
         // Nose pointing into left wall: rear is farther than front
-        float diff = static_cast<float>(dist_rear_left) -
-                     static_cast<float>(dist_front_left);
+        float diff = static_cast<float>(state.dist_side_rear_left) -
+                     static_cast<float>(state.dist_side_front_left);
         steer_side_angle += constrain(diff / 150.0f, -0.5f, 0.5f);
       }
-      if (dist_front_right < config::sensor_max_raw &&
-          dist_rear_right < config::sensor_max_raw) {
+      if (state.dist_side_front_right < config::sensor_max_raw &&
+          state.dist_side_rear_right < config::sensor_max_raw) {
         // Nose pointing into right wall: rear is farther than front
-        float diff = static_cast<float>(dist_front_right) -
-                     static_cast<float>(dist_rear_right);
+        float diff = static_cast<float>(state.dist_side_front_right) -
+                     static_cast<float>(state.dist_side_rear_right);
         steer_side_angle += constrain(diff / 150.0f, -0.5f, 0.5f);
       }
 
@@ -834,12 +917,12 @@ void loop() {
     }
 
     // telemetry logging
-  if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
-    last_telemetry_us += telemetry_interval_us;
     if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
-      last_telemetry_us = state.current_time_us;
-    }
-    send_telemetry();
+      last_telemetry_us += telemetry_interval_us;
+      if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
+        last_telemetry_us = state.current_time_us;
+      }
+      send_telemetry();
     }
   }
 }
