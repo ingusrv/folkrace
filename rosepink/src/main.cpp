@@ -464,7 +464,7 @@ void setup() {
 
   state.running_state = RunningState::COUNTDOWN;
   countdown_start_ms = millis();
-  imu.startCalibration();
+  imu.start_calibration();
   prev_running_state = RunningState::COUNTDOWN;
 }
 
@@ -665,7 +665,7 @@ void loop() {
     if (state.running_state != prev_running_state) {
       if (state.running_state == RunningState::COUNTDOWN) {
         countdown_start_ms = state.current_time_ms;
-        imu.startCalibration();
+        imu.start_calibration();
       } else if (state.running_state == RunningState::IDLE) {
         reset_pid(state.steering_pid);
         throttle_limiter.reset(0.0f);
@@ -698,10 +698,10 @@ void loop() {
     case RunningState::COUNTDOWN:
       state.target_throttle = 0.0f;
       state.target_steering = 0.0f;
-      imu.updateCalibration();
+      imu.update_calibration();
       if (state.current_time_ms - countdown_start_ms >=
           config::start_delay_ms) {
-        imu.finishCalibration();
+        imu.finish_calibration();
         flat_pitch = state.imu.pitch;
         last_slope_us = 0;
         is_on_slope = false;

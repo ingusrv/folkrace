@@ -36,7 +36,7 @@ bool BMI088Driver::begin() {
   return true;
 }
 
-void BMI088Driver::startCalibration() {
+void BMI088Driver::start_calibration() {
   m_calib_sum_x = 0.0f;
   m_calib_sum_y = 0.0f;
   m_calib_sum_z = 0.0f;
@@ -44,7 +44,7 @@ void BMI088Driver::startCalibration() {
   m_calibrating = true;
 }
 
-void BMI088Driver::updateCalibration() {
+void BMI088Driver::update_calibration() {
   if (!m_initialized || !m_calibrating) {
     return;
   }
@@ -56,7 +56,7 @@ void BMI088Driver::updateCalibration() {
   m_calib_samples++;
 }
 
-void BMI088Driver::finishCalibration() {
+void BMI088Driver::finish_calibration() {
   if (m_calib_samples > 0) {
     m_gyro_bias_x = m_calib_sum_x / static_cast<float>(m_calib_samples);
     m_gyro_bias_y = m_calib_sum_y / static_cast<float>(m_calib_samples);
@@ -69,12 +69,12 @@ void BMI088Driver::finishCalibration() {
 }
 
 void BMI088Driver::calibrate(uint16_t samples, uint16_t delay_ms) {
-  startCalibration();
+  start_calibration();
   for (uint16_t i = 0; i < samples; ++i) {
-    updateCalibration();
+    update_calibration();
     delay(delay_ms);
   }
-  finishCalibration();
+  finish_calibration();
 }
 
 void BMI088Driver::update() {

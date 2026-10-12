@@ -7,7 +7,7 @@ public:
       : m_pin(pin), m_min_us(min_us), m_neutral_us(neutral_us), m_max_us(max_us) {}
 
   void init();
-  void writeMicroseconds(uint16_t us);
+  void write_microseconds(uint16_t us);
   void write(float throttle); // -1.0f (full reverse) to +1.0f (full forward), 0.0f is neutral
   void stop();
 

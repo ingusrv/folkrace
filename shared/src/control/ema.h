@@ -41,10 +41,10 @@ public:
 
   float get() const { return m_value; }
 
-  void setAlpha(float alpha) { m_alpha = alpha; }
-  float getAlpha() const { return m_alpha; }
+  void set_alpha(float alpha) { m_alpha = alpha; }
+  float get_alpha() const { return m_alpha; }
 
-  bool isInitialized() const { return m_initialized; }
+  bool is_initialized() const { return m_initialized; }
 
 private:
   float m_alpha;

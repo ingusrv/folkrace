@@ -12,25 +12,25 @@ public:
   bool begin();
 
   // Calibration routines
-  void startCalibration();
-  void updateCalibration();
-  void finishCalibration();
+  void start_calibration();
+  void update_calibration();
+  void finish_calibration();
   void calibrate(uint16_t samples = 200, uint16_t delay_ms = 5);
 
   // Periodic sensor read & fusion
   void update();
   void update(IMUState &state);
 
-  const IMUState &getState() const { return m_state; }
-  void resetYaw(float yaw = 0.0f) { m_state.yaw = yaw; }
-  void setAlpha(float alpha) { m_alpha = alpha; }
+  const IMUState &get_state() const { return m_state; }
+  void reset_yaw(float yaw = 0.0f) { m_state.yaw = yaw; }
+  void set_alpha(float alpha) { m_alpha = alpha; }
 
-  bool isInitialized() const { return m_initialized; }
-  bool isCalibrated() const { return m_calibrated; }
+  bool is_initialized() const { return m_initialized; }
+  bool is_calibrated() const { return m_calibrated; }
 
-  float getGyroBiasX() const { return m_gyro_bias_x; }
-  float getGyroBiasY() const { return m_gyro_bias_y; }
-  float getGyroBiasZ() const { return m_gyro_bias_z; }
+  float get_gyro_bias_x() const { return m_gyro_bias_x; }
+  float get_gyro_bias_y() const { return m_gyro_bias_y; }
+  float get_gyro_bias_z() const { return m_gyro_bias_z; }
 
 private:
   Bmi088Accel m_accel;

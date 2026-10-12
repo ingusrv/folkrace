@@ -6,7 +6,7 @@ void ESC::init() {
   stop(); // Output 1500us neutral pulse immediately for arming
 }
 
-void ESC::writeMicroseconds(uint16_t us) {
+void ESC::write_microseconds(uint16_t us) {
   us = constrain(us, m_min_us, m_max_us);
   // Period is 20,000 us (50 Hz). duty = (us * MAX_DUTY) / 20000
   uint32_t duty = (static_cast<uint32_t>(us) * MAX_DUTY) / 20000;
@@ -23,9 +23,9 @@ void ESC::write(float throttle) {
     us = static_cast<uint16_t>(m_neutral_us + throttle * (m_neutral_us - m_min_us));
   }
 
-  writeMicroseconds(us);
+  write_microseconds(us);
 }
 
 void ESC::stop() {
-  writeMicroseconds(m_neutral_us);
+  write_microseconds(m_neutral_us);
 }

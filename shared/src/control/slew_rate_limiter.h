@@ -45,7 +45,7 @@ public:
   void reset(float value = 0.0f) { m_current = value; }
   float get() const { return m_current; }
 
-  void setRates(float max_accel, float max_decel) {
+  void set_rates(float max_accel, float max_decel) {
     m_max_accel = max_accel;
     m_max_decel = max_decel;
   }
