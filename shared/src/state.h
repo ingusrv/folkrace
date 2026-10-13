@@ -81,6 +81,7 @@ enum class SensorHealth : uint8_t {
   OFFLINE,       // Unavailable: recovery backoff or IMU disabled until reboot
   RECOVERING,    // Bus reset or XSHUT sequencing in progress
   RANGE_INVALID, // Device returned a result, but distance is unreliable
+  NO_RETURN,     // Opt-in racing fallback: fresh sentinel, assumed max range
 };
 
 inline const char *sensor_health_to_str(SensorHealth h) {
@@ -101,6 +102,8 @@ inline const char *sensor_health_to_str(SensorHealth h) {
     return "RECOVER";
   case SensorHealth::RANGE_INVALID:
     return "RANGE_INVALID";
+  case SensorHealth::NO_RETURN:
+    return "NO_RETURN";
   default:
     return "UNKNOWN";
   }
@@ -131,7 +134,8 @@ enum class SensorSlot : uint8_t {
 };
 
 struct SensorStatus {
-  uint32_t timestamp_us = 0; // Last successful measurement timestamp
+  uint32_t timestamp_us =
+      0; // Last usable sample (measured or NO_RETURN fallback)
   SensorHealth health = SensorHealth::INITIALIZING;
   uint32_t error_count = 0;
   uint16_t consecutive_errors = 0;
@@ -157,7 +161,8 @@ inline bool is_sensor_fresh(uint32_t timestamp_us, uint32_t now_us,
 
 inline bool is_sensor_available(const SensorData &s, uint32_t now_us,
                                 uint32_t max_age_us) {
-  return (s.health == SensorHealth::OK) &&
+  return (s.health == SensorHealth::OK ||
+          s.health == SensorHealth::NO_RETURN) &&
          is_sensor_fresh(s.timestamp_us, now_us, max_age_us);
 }
 

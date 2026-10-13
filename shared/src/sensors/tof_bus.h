@@ -15,7 +15,8 @@ inline SensorError wire_error(uint8_t rc) {
 // Hardware faults and range quality are deliberately separate. See fork
 // provenance.
 inline bool accept_range(SensorData &out, uint16_t raw, uint8_t status,
-                         uint32_t now, uint16_t minimum, uint16_t maximum) {
+                         uint32_t now, uint16_t minimum, uint16_t maximum,
+                         bool allow_no_return = false) {
   out.raw_range_mm = raw;
   out.raw_status = status;
   out.raw_timestamp_us = now;
@@ -25,7 +26,16 @@ inline bool accept_range(SensorData &out, uint16_t raw, uint8_t status,
     return false;
   }
   out.consecutive_errors = 0;
-  if (code != 11 || raw >= 8190) {
+  // Observed on Sniegbaltite in open space: signal failure 4 / 8191 and
+  // phase failure 6 / 8190. They prove a live result stream, not clear space.
+  // Permit only these exact sentinel classes under an explicit racing policy;
+  // preserve NO_RETURN quality rather than claiming a valid measurement.
+  if (allow_no_return && (code == 4 || code == 6) &&
+      (raw == 8190 || raw == 8191)) {
+    out.distance_mm = maximum;
+    out.timestamp_us = now;
+    out.health = SensorHealth::NO_RETURN;
+  } else if (code != 11 || raw >= 8190) {
     out.health = SensorHealth::RANGE_INVALID;
   } else {
     out.distance_mm = std::max(minimum, std::min(maximum, raw));
@@ -145,9 +155,9 @@ public:
           complete = true;
           d.result_us = now;
           d.grace_start_us = 0;
-          bool healthy =
-              accept_range(d.data, (uint16_t(result[10]) << 8) | result[11],
-                           result[0], now, m_min, m_max);
+          bool healthy = accept_range(
+              d.data, (uint16_t(result[10]) << 8) | result[11], result[0], now,
+              m_min, m_max, m_settings.allow_no_return);
           if (healthy)
             d.backoff.acquired(now);
           else {
@@ -235,7 +245,8 @@ public:
         publish();
         vTaskDelay(1);
         // An always-powered device may still answer at 0x29 after a failed
-        // address write. Keep remaining XSHUT devices isolated until it recovers.
+        // address write. Keep remaining XSHUT devices isolated until it
+        // recovers.
         if (!initialized && devices[i].xshut < 0)
           break;
       }

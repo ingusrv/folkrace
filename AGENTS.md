@@ -6,6 +6,12 @@ Guidance for AI agents and contributors working in this repository.
 
 Firmware for a team of autonomous **folkrace** robots (small RC-style cars that race around a walled track and must avoid walls/other cars). Everything runs on **ESP32-family** MCUs using the **Arduino framework** under **PlatformIO**. Each robot is its own PlatformIO project; common code lives in `shared/` and is consumed as a local library.
 
+## Domain context (Folkrace)
+- Small hobby robots (~15-20 cm, light chassis, small battery-powered motors) racing on a closed track with low walls. No people or bystanders on the track.
+- Wall contact, nudges, and collisions are normal. Aggressive driving, wall skimming, and forceful reverse recovery are intended; don't add speed caps or overly cautious behavior for real-vehicle-style safety.
+- Optimize for lap time and robustness over smoothness.
+- Still protect the hardware: respect battery voltage/current limits, motor driver thermal limits, and keep a failsafe (motors stop on watchdog timeout or lost signal, and stay off at boot/flash).
+
 ## Repository layout
 
 ```

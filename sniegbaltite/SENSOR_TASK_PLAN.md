@@ -2,6 +2,23 @@
 
 Updated: 2026-10-13. This document records the architecture and concrete design for dual sensor tasks, snapshot queues, blocking IMU recovery, sensor data models, telemetry protocol v1 (first versioned protocol), queued binary serial transport, degraded control policy, and cross-robot migration.
 
+## Open-space policy amendment (2026-10-13)
+
+The user requested continued racing on open straights after observing purple
+motion-inhibit blinking. Live telemetry verified fresh 8191/status-4 and
+8190/status-6 results with zero I2C errors on Sniegbaltite. This amendment
+supersedes the strict range-quality rejection below for that robot only.
+
+`tof_allow_no_return = true` explicitly permits status 4/6 with exact 8190/8191
+sentinels as an assumed maximum control distance. Report appended health value
+8, `NO_RETURN`, rather than OK. Refresh the usable timestamp only after complete
+checked acquisition and interrupt acknowledgement; normal 100 ms freshness,
+transport/hardware failure, and no-result timeout rules still apply. Other
+robots keep the strict default. Unknown/minimum-range statuses and non-sentinel
+quality failures remain unavailable. No-return does not establish an absent
+obstacle: validate nearby dark/angled targets on hardware. Raw diagnostics and
+quality remain visible in BLE/telemetry/Python; binary packet layout is unchanged.
+
 ## Objective
 
 Replace the existing ToF initialization task with two dedicated sensor tasks, one per I²C bus. Each task exclusively owns its bus and all devices on it. Move initialization, acquisition, fusion, calibration, disconnect detection, and recovery into those tasks. Keep the 100 Hz control loop responsive, ensure failure cannot be mistaken for open track, and expose granular sensor health through wireless telemetry.

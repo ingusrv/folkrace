@@ -195,6 +195,93 @@ static void quality_and_telemetry() {
   assert(is_sensor_fresh(UINT32_MAX - 10, 10, 100));
   assert(!is_sensor_fresh(0, 10, 100));
 }
+static void open_space_racing_fallback() {
+  for (uint8_t code : {4, 6}) {
+    for (uint16_t raw : {8190, 8191}) {
+      SensorData strict = distance(120, 100);
+      sensor_policy::accept_range(strict, raw, code << 3, 200, 30, 1000);
+      assert(strict.health == SensorHealth::RANGE_INVALID);
+      assert(
+          !sensor_policy::available(strict, 200)); // Other robots keep policy.
+      SensorData racing = strict;
+      assert(sensor_policy::accept_range(racing, raw, code << 3, 200, 30, 1000,
+                                         true));
+      assert(racing.health == SensorHealth::NO_RETURN);
+      assert(racing.distance_mm == 1000 && racing.timestamp_us == 200);
+      assert(racing.raw_range_mm == raw && racing.raw_timestamp_us == 200);
+      assert(racing.error_count == 0 && sensor_policy::available(racing, 200));
+      assert(!sensor_policy::available(racing, 100201));
+      sensor_policy::expire(racing, 100201, sensor_policy::tof_age_us);
+      assert(racing.health == SensorHealth::STALE);
+    }
+  }
+  for (uint8_t code : {0, 1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15}) {
+    SensorData sample;
+    sensor_policy::accept_range(sample, 8191, code << 3, 200, 30, 1000, true);
+    assert(!sensor_policy::available(sample, 200));
+  }
+  SensorData near;
+  sensor_policy::accept_range(near, 80, 4 << 3, 200, 30, 1000, true);
+  assert(
+      !sensor_policy::available(near, 200)); // Weak non-sentinel isn't clear.
+
+  TwoWire bus;
+  sensor_policy::Settings settings;
+  settings.allow_no_return = true;
+  sensor_policy::ToFBus tof(bus, 4, 5, 30, 1000, 20000, settings);
+  tof.count = 3;
+  tof.devices[1].xshut = 41;
+  tof.devices[2].xshut = 42;
+  tof.begin();
+  tof.recover();
+  auto calls = VL53L0X::init_calls;
+  VL53L0X::result_mm = 8191;
+  VL53L0X::result_status = 4 << 3;
+  RobotState state{};
+  state.running_state = RunningState::RUNNING;
+  state.target_throttle = 0.4f;
+  state.current_throttle = 0.25f;
+  for (unsigned i = 0; i < 200; ++i) {
+    delay(10);
+    tof.poll();
+    tof.recover();
+    state.dist_front = tof.devices[0].data;
+    state.dist_right = tof.devices[1].data;
+    state.dist_left = tof.devices[2].data;
+    state.current_time_us = micros();
+    assert(sensor_policy::required(state, state.current_time_us));
+    assert(!sensor_motion_inhibit(
+        state, !sensor_policy::required(state, state.current_time_us)));
+    assert(state.target_throttle == 0.4f);
+    auto guidance = sensor_guidance(state, state.current_time_us, 350.0f, 160,
+                                    500, 180, 1000);
+    assert(guidance.urgency == 0.0f && guidance.steering == 0.0f);
+    auto telemetry = make_telemetry(state, 0);
+    assert(telemetry.flags & 8);
+    assert(telemetry.sensors[0].health ==
+           static_cast<uint8_t>(SensorHealth::NO_RETURN));
+    assert(telemetry.dist_front == 1000 &&
+           telemetry.raw_tof[0].range_mm == 8191);
+  }
+  assert(VL53L0X::init_calls ==
+         calls); // Continuous weak results don't reset bus.
+  VL53L0X::ready = false;
+  delay(101);
+  tof.poll();
+  state.dist_front = tof.devices[0].data;
+  assert(
+      !sensor_policy::required(state, micros())); // Silent device still stops.
+  VL53L0X::ready = true;
+  delay(500);
+  tof.recover();
+  tof.poll();
+  VL53L0X::injected_error = 2;
+  tof.poll();
+  assert(!sensor_policy::available(tof.devices[0].data, micros()));
+  VL53L0X::injected_error = 0;
+  VL53L0X::result_mm = 500;
+  VL53L0X::result_status = 11 << 3;
+}
 static void recovery_backoff_and_grace() {
   sensor_policy::Backoff b;
   b.defer(100);
@@ -277,7 +364,8 @@ static void failed_primary_keeps_group_isolated() {
   VL53L0X::init_ok = true;
   delay(500);
   assert(tof.recover());
-  assert(tof.devices[0].active && tof.devices[1].active && tof.devices[2].active);
+  assert(tof.devices[0].active && tof.devices[1].active &&
+         tof.devices[2].active);
 }
 static void immediate_publication_and_raw_retention() {
   TwoWire bus;
@@ -445,6 +533,7 @@ int main() {
   abort_gate();
   motion_and_guidance();
   quality_and_telemetry();
+  open_space_racing_fallback();
   recovery_backoff_and_grace();
   failed_primary_keeps_group_isolated();
   immediate_publication_and_raw_retention();

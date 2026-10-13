@@ -75,7 +75,7 @@ of the source changes. A full frame is 192 bytes, a decoded serial record is
 25,560 bytes/s of the 46,080 bytes/s 8N1 UART capacity. This is the calculated
 budget; hardware congestion/queue behavior remains to be measured.
 
-Run `python3 ../telemetry-receiver/scripts/read_telemetry.py PORT 460800`
+Run `python3 ../telemetry/scripts/read_telemetry.py PORT 460800`
 with pyserial installed. `--quiet` suppresses per-packet console formatting.
 
 `sensors` sends one bounded notification per slot; `sensors 0` requests just
@@ -97,7 +97,7 @@ Run from Sniegbaltite:
 ```sh
 pio run
 sh tests/host/run.sh
-python3 ../telemetry-receiver/tests/test_decoder.py
+python3 ../telemetry/tests/test_decoder.py
 ```
 
 Host tests use the real policy, startup handshake, owners, and checked drivers
@@ -119,10 +119,88 @@ publication-to-inhibit versus physical disconnect latency, motor deceleration
 travel, independent bus faults, actual BMI088 sign comparison, initial
 calibration/restarts on inclines, pink LED priority, stack margins/watchdog
 behavior under repeated recovery, and open-space/dark-wall/too-close ranging.
-The unchanged 100 ms distance freshness rule deliberately stops on unreliable
-front returns, even when those occur on an open straight. Validate on the track
+The unchanged 100 ms distance freshness rule stops on stale or unavailable
+front returns. See the Sniegbaltite open-space policy below for the explicit
+exception for observed no-return sentinels. Validate on the track
 before adopting any more permissive quality policy.
 
 All five PlatformIO targets and the host suites are required rollout checks.
 Receiver congestion, physical wheel stop ordering, side-sensor firmware-upload
 recovery, and task stack/watchdog measurements still require hardware.
+
+## Sniegbaltite open-space racing policy (2026-10-13)
+
+Live receiver capture confirmed that an open straight produces fresh checked
+front/diagonal results of 8191 with internal status 4 and 8190 with status 6,
+without transport errors. Treating each as unavailable made the car stop and
+blink purple. Sniegbaltite now opts into `config::tof_allow_no_return`: only
+status 4/6 combined with the exact 8190/8191 sentinel becomes `NO_RETURN` (health
+value 8). The control distance is assumed to be sensor_max_raw and its timestamp
+advances with each complete checked/acknowledged result. BLE and Python preserve
+the distinct quality label and unchanged raw range/status. Packet sizes and
+protocol version remain unchanged.
+
+This is a racing assumption, not proof of open space: a difficult nearby target
+can produce the same weak return. Hardware wall-detection validation is still
+required. Other robots retain strict rejection by default. Non-sentinel weak
+results, minimum-range/unknown statuses, hardware/transport errors and silent or
+stale samples remain unavailable. A no-return sample expires at the same 100 ms
+limit and does not authorize driving after disconnect. Normal valid samples
+immediately restore OK with the measured distance.
+
+## Sniegbaltite pole avoidance and recovery — revised 2026-10-14
+
+The CSV `../telemetry/scripts/csv/2026-10-14_00-27-08.csv` exposed an overly
+persistent steering floor: at 16003 ms the front measured 239 mm, the left side
+31 mm, and the right side no-return/max range, yet steering was -0.984 toward
+the left wall. At 16533 ms reverse still followed the old passing direction
+instead of the newly available space. The previous 650 mm onset and 200 ms
+post-obstacle/post-reverse steering hold are superseded by these changes.
+
+Front avoidance starts at 550 mm and reaches full demand at 180 mm. One passing
+pulse is bounded to 180 ms or 18 degrees of continuous, calibrated IMU yaw.
+Without usable IMU continuity, the time bound remains. A still-close front does
+not renew the pulse; ordinary wall following takes control. Front clearance
+releases the pulse immediately, with 50 mm rearming hysteresis. There is no
+post-obstacle or post-reverse forced steering tail. Corner throttle reduction
+still uses current front proximity, and open-space NO_RETURN behavior remains.
+
+Fresh side-wall pressure takes priority before and after PID, including during
+a pulse. Front anticipation is removed from the baseline shared guidance for
+Sniegbaltite so that its unbounded blend cannot defeat the pulse limit or wall
+repulsion. At recovery entry the passing direction is recomputed from current
+fresh diagonal/side clearances; an old pole latch cannot force recovery toward
+a newly blocked wall.
+
+Normal recovery still uses up to 200 ms straight backing after the reverse
+command starts, then up to 250 ms turning, with front-clearance and 30-degree
+yaw exits. A 900 ms overall bound includes the throttle ramp. Steering centers
+while the commanded throttle is still negative when forward driving resumes;
+PID/debounce history resets, and sensor-loss inhibition cancels the maneuver.
+These are command timers and front-clearance checks, not measured travel distance.
+
+The recording also established Sniegbaltite's yaw convention: right steering
+produced positive gyro_z (median +108.8 deg/s), and left steering negative
+(median -116.3 deg/s) during forward RUNNING samples with |steering| > 0.5 and
+throttle > 0.15. CW progress therefore advances the yaw maximum and CCW the
+minimum. Wrong-way deviation and turnaround steering now use this convention.
+The INPUT_PULLUP switch maps on/LOW to CLOCKWISE and off/HIGH (default) to
+COUNTER_CLOCKWISE, both at boot and during live direction changes.
+Previously the first normal left-turn sequence (5433–11433 ms, yaw -0.1 to
+-227.5 degrees) incorrectly accumulated a wrong-way deviation.
+
+`tests/host/navigation_test.cpp` covers recorded wall-conflict/escape fixtures,
+mirrored wall priority, pulse yaw/time limits, no tail or repeated pulse on a
+continuously close front, stale-side exclusion, distinct clearance frames,
+reverse timing/IMU discontinuities, timestamp wraparound, normal CW/CCW yaw
+progress, and genuinely opposite heading detection. On-track trajectories and
+physical overshoot still require validation after reflashing. Navigation changes
+are scoped to Sniegbaltite; other robots need their own yaw-sign validation.
+
+### Earlier onset adjustment from the 00:53:47 recording
+
+The top portion of `../telemetry/scripts/csv/2026-10-14_00-53-47.csv` shows
+front distance falling from 587 mm at 6758 ms to 483 mm at 6788 ms. Following
+the user's successful track test, onset increased from 500 to 550 mm for a
+modest earlier response. The 180 ms / 18-degree pulse limits, wall priority,
+180 mm full-demand threshold, and reverse behavior retain their previous tuning.

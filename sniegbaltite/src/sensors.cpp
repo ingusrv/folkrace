@@ -14,7 +14,8 @@ constexpr sensor_policy::Settings settings = {
     config::sensor_recovery_healthy_ms,
     config::sensor_bus_timeout_ms,
     config::tof_timeout_ms,
-    config::tof_resume_grace_us};
+    config::tof_resume_grace_us,
+    config::tof_allow_no_return};
 // Control, BLE and telemetry use this same fixed freshness contract.
 static_assert(config::sensor_freshness_tof_us == sensor_policy::tof_age_us);
 static_assert(config::sensor_freshness_imu_us == sensor_policy::imu_age_us);

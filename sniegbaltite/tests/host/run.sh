@@ -31,3 +31,7 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   -I"$shared_dir/src" -I"$project_dir/../banana/src" \
   "$host_tests/drive_output_test.cpp" -o "$build_dir/drive_output_test"
 "$build_dir/drive_output_test"
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$shared_dir/src" -I"$project_dir/src" \
+  "$host_tests/navigation_test.cpp" -o "$build_dir/navigation_test"
+"$build_dir/navigation_test"

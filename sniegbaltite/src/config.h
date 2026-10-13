@@ -6,6 +6,9 @@ namespace config {
 constexpr uint32_t sensor_freshness_imu_us = 50000;  // 50 ms max age
 constexpr uint32_t sensor_freshness_tof_us = 100000; // 100 ms max age
 constexpr uint16_t sensor_max_consecutive_errors = 3;
+// Racing policy for checked status-4/6 sentinel results observed in open space.
+// Weak returns are assumed beyond sensor_max_raw, still reported NO_RETURN.
+constexpr bool tof_allow_no_return = true;
 
 // Recovery timings
 constexpr uint32_t sensor_recovery_delay_initial_ms = 500;
@@ -42,9 +45,21 @@ constexpr uint8_t servo_deg_right = 130;
 constexpr uint8_t servo_deg_left = 50;
 
 constexpr uint16_t start_delay_ms = 5000;
-constexpr uint16_t reverse_duration_ms = 400;
-constexpr uint16_t reverse_turn_duration_ms = 600;
-constexpr uint16_t reverse_trigger_delay_ms = 400;
+// ms: maximum straight backup after the reverse command begins.
+constexpr uint16_t reverse_duration_ms = 200;
+constexpr uint16_t reverse_min_duration_ms = 100;  // ms: before clearance exit
+constexpr uint16_t reverse_turn_duration_ms = 250; // ms: turn time, maximum
+constexpr uint16_t reverse_total_timeout_ms = 900; // ms: includes throttle ramp
+// ms: confirm a close obstacle while forward throttle ramps toward zero.
+constexpr uint16_t reverse_trigger_delay_ms = 60;
+constexpr float reverse_max_yaw_deg = 30.0f;     // deg: total recovery rotation
+constexpr float reverse_motion_throttle = 0.03f; // commanded reverse magnitude
+constexpr uint16_t reverse_clearance_margin_mm = 100;
+constexpr uint16_t avoidance_direction_margin_mm = 60; // ignore gap noise
+constexpr uint16_t avoidance_max_ms = 180; // ms: one front-avoidance pulse
+constexpr float avoidance_max_yaw_deg =
+    18.0f; // deg: hand back to wall following
+constexpr uint16_t avoidance_release_margin_mm = 50; // mm: rearm hysteresis
 
 constexpr uint16_t sensor_min_raw = 30;
 constexpr uint16_t sensor_max_raw = 1000;
@@ -52,7 +67,7 @@ constexpr float sensor_range =
     static_cast<float>(sensor_max_raw - sensor_min_raw);
 
 // Cornering and obstacle navigation parameters
-constexpr uint16_t front_turn_dist = 500;
+constexpr uint16_t front_turn_dist = 550;
 // mm: distance where front demands full-lock turn
 constexpr uint16_t front_critical_dist = 180;
 // mm: emergency side wall repulsion

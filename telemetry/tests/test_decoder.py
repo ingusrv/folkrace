@@ -72,6 +72,12 @@ class DecoderTests(unittest.TestCase):
         self.assertEqual(data["sensors"][7]["last_error_name"], "MEASUREMENT_TIMEOUT")
         json.dumps(data, allow_nan=False)
 
+    def test_no_return_quality_is_preserved(self):
+        # Serial envelope 15 + header 8 + telemetry diagnostics offset 85.
+        data, = StreamDecoder().feed(self.record(change=(108, 8)))
+        self.assertEqual(data["sensors"][0]["health"], 8)
+        self.assertEqual(data["sensors"][0]["health_name"], "NO_RETURN")
+
     def test_all_split_positions_and_coalescing(self):
         for cut in range(len(self.fixture) + 1):
             decoder = StreamDecoder()

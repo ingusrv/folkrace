@@ -8,6 +8,7 @@
 #include "control/slew_rate_limiter.h"
 #include "driver/esc.h"
 #include "driver/servo.h"
+#include "obstacle_navigation.h"
 #include "prefs/prefs.h"
 #include "protocol.h"
 #include "sensors.h"
@@ -43,7 +44,9 @@ static uint32_t countdown_start_ms = 0;
 static uint32_t obstacle_start_us = 0;
 static bool obstacle_detected = false;
 static RunningState prev_running_state = RunningState::IDLE;
-static float reverse_turn_steering = 0.0f;
+static ObstacleAvoidance obstacle_avoidance;
+static ReverseRecovery reverse_recovery;
+static bool resume_centering = false;
 
 static float max_forward_yaw = 0.0f;
 static float min_forward_yaw = 0.0f;
@@ -89,9 +92,10 @@ void setup() {
 
   pinMode(pin::direction_switch, INPUT_PULLUP);
 
+  // INPUT_PULLUP: on/LOW is clockwise; off/HIGH is counterclockwise.
   state.track_direction = (digitalRead(pin::direction_switch) == LOW)
-                              ? TrackDirection::COUNTER_CLOCKWISE
-                              : TrackDirection::CLOCKWISE;
+                              ? TrackDirection::CLOCKWISE
+                              : TrackDirection::COUNTER_CLOCKWISE;
 
   init_ble("sniegbaltite");
   init_espnow();
@@ -214,8 +218,8 @@ void loop() {
     // Read toggle switch position (live reading with transition detection)
     TrackDirection current_direction =
         (digitalRead(pin::direction_switch) == LOW)
-            ? TrackDirection::COUNTER_CLOCKWISE
-            : TrackDirection::CLOCKWISE;
+            ? TrackDirection::CLOCKWISE
+            : TrackDirection::COUNTER_CLOCKWISE;
     if (current_direction != state.track_direction) {
       state.track_direction = current_direction;
       max_forward_yaw = state.imu.measurement.yaw;
@@ -228,26 +232,21 @@ void loop() {
       }
     }
 
-    // Calculate progress frontier & yaw deviation based on track direction
-    float yaw_deviation = 0.0f;
-    if (imu_ready &&
-        state.track_direction == TrackDirection::COUNTER_CLOCKWISE) {
-      if (state.imu.measurement.yaw > max_forward_yaw) {
-        max_forward_yaw = state.imu.measurement.yaw;
-      }
-      yaw_deviation = max_forward_yaw - state.imu.measurement.yaw;
-    } else if (imu_ready) {
-      if (state.imu.measurement.yaw < min_forward_yaw) {
-        min_forward_yaw = state.imu.measurement.yaw;
-      }
-      yaw_deviation = state.imu.measurement.yaw - min_forward_yaw;
-    }
+    // Empirical Sniegbaltite yaw sign: right/CW positive, left/CCW negative.
+    float yaw_deviation =
+        imu_ready ? heading_deviation(state.track_direction,
+                                      state.imu.measurement.yaw,
+                                      max_forward_yaw, min_forward_yaw)
+                  : 0.0f;
 
     // Handle state transition edge triggers (e.g., triggered via BLE)
     if (state.running_state != prev_running_state) {
       if (state.running_state == RunningState::COUNTDOWN) {
         countdown_start_ms = state.current_time_ms;
         startup.enter(countdown_start_ms);
+        obstacle_avoidance.reset();
+        reverse_recovery.reset();
+        resume_centering = false;
       } else if (state.running_state == RunningState::IDLE) {
         reset_pid(state.steering_pid);
         seed_pid = true;
@@ -257,9 +256,9 @@ void loop() {
         wrong_way_start_us = 0;
         last_slope_us = 0;
         is_on_slope = false;
-      } else if (state.running_state == RunningState::REVERSE_TURN) {
-        reverse_turn_steering =
-            (state.track_direction == TrackDirection::CLOCKWISE) ? -1.0f : 1.0f;
+        obstacle_avoidance.reset();
+        reverse_recovery.reset();
+        resume_centering = false;
       } else if (state.running_state == RunningState::WRONG_WAY_RECOVERY) {
         recovery_phase = 1;
         recovery_phase_start_us = state.current_time_us;
@@ -281,6 +280,9 @@ void loop() {
       obstacle_start_us = 0;
       wrong_way_start_us = 0;
       seed_pid = true;
+      obstacle_avoidance.reset();
+      reverse_recovery.reset();
+      resume_centering = state.current_throttle < 0.0f;
     }
     if (!inhibited && was_inhibited) {
       reset_pid(state.steering_pid);
@@ -332,6 +334,13 @@ void loop() {
         break;
 
       case RunningState::RUNNING: {
+        if (resume_centering && state.current_throttle >= 0.0f) {
+          resume_centering = false;
+          obstacle_avoidance.resume(state.current_time_us);
+        }
+        if (!resume_centering)
+          obstacle_avoidance.update(state, state.current_time_us, imu_ready,
+                                    orientation_generation);
         // Wrong-way check
         if (imu_ready && yaw_deviation > config::wrong_way_yaw_threshold_deg) {
           if (wrong_way_start_us == 0) {
@@ -363,9 +372,11 @@ void loop() {
                          1000) {
             state.running_state = RunningState::REVERSE;
             state.maneuver_start_us = state.current_time_us;
-            reverse_turn_steering =
-                (state.track_direction == TrackDirection::CLOCKWISE) ? -1.0f
-                                                                     : 1.0f;
+            reverse_recovery.begin(state, obstacle_avoidance.direction(),
+                                   imu_ready, orientation_generation);
+            state.target_throttle = -state.reverse_throttle;
+            state.target_steering = 0.0f;
+            resume_centering = false;
             obstacle_detected = false;
             break;
           }
@@ -373,12 +384,11 @@ void loop() {
           obstacle_detected = false;
         }
 
-        SensorGuidance guidance = sensor_guidance(
-            state, state.current_time_us, config::side_turn_range,
-            config::side_danger_dist, config::front_turn_dist,
-            config::front_critical_dist, config::sensor_max_raw);
-        float raw_steer_target = guidance.steering;
-        float front_urgency = guidance.urgency;
+        SensorGuidance guidance =
+            obstacle_avoidance.guidance(state, state.current_time_us);
+        float raw_steer_target = obstacle_avoidance.steer(guidance.steering);
+        float front_urgency =
+            std::max(guidance.urgency, obstacle_avoidance.urgency());
 
         // Steering PID update (includes trim offset)
         state.steering_pid.error = raw_steer_target + state.steering_pid.offset;
@@ -387,6 +397,14 @@ void loop() {
           seed_pid = false;
         }
         state.target_steering = update_pid(delta_time, state.steering_pid);
+        state.target_steering = obstacle_avoidance.steer(state.target_steering);
+        if (resume_centering) {
+          // Forward steering while the ESC still commands reverse would rotate
+          // the nose the wrong way. Center until the throttle crosses zero.
+          state.target_steering = 0.0f;
+          reset_pid(state.steering_pid);
+          seed_pid = true;
+        }
 
         // 5. Throttle control with corner slowing
         float throttle = state.base_throttle;
@@ -396,39 +414,39 @@ void loop() {
         }
         float corner_speed_factor = 1.0f - 0.45f * front_urgency;
         state.target_throttle = throttle * corner_speed_factor;
+        if (obstacle)
+          state.target_throttle = 0.0f;
 
         break;
       }
 
       case RunningState::REVERSE:
-        state.target_throttle = -state.reverse_throttle;
-        state.target_steering = 0.0f;
-        if (state.current_time_us - state.maneuver_start_us >=
-            static_cast<uint32_t>(config::reverse_duration_ms) * 1000) {
-          state.running_state = RunningState::REVERSE_TURN;
+      case RunningState::REVERSE_TURN: {
+        uint16_t rev_dist = state.dist_reverse > 0
+                                ? state.dist_reverse
+                                : config::default_dist_reverse;
+        RunningState next = reverse_recovery.update(state, rev_dist, imu_ready,
+                                                    orientation_generation);
+        if (next != state.running_state)
           state.maneuver_start_us = state.current_time_us;
-          reverse_turn_steering =
-              (state.track_direction == TrackDirection::CLOCKWISE) ? -1.0f
-                                                                   : 1.0f;
-        }
-        break;
-
-      case RunningState::REVERSE_TURN:
-        state.target_throttle = -state.reverse_throttle;
-        state.target_steering = reverse_turn_steering;
-
-        if (state.current_time_us - state.maneuver_start_us >=
-            static_cast<uint32_t>(config::reverse_turn_duration_ms) * 1000) {
+        state.running_state = next;
+        state.target_throttle =
+            next == RunningState::RUNNING ? 0.0f : -state.reverse_throttle;
+        state.target_steering = reverse_recovery.steering();
+        if (next == RunningState::RUNNING) {
           reset_pid(state.steering_pid);
           seed_pid = true;
           obstacle_detected = false;
-          state.running_state = RunningState::RUNNING;
+          obstacle_start_us = 0;
+          wrong_way_start_us = 0;
+          resume_centering = true;
         }
         break;
+      }
 
       case RunningState::WRONG_WAY_RECOVERY: {
         float recovery_forward_steer =
-            (state.track_direction == TrackDirection::CLOCKWISE) ? -1.0f : 1.0f;
+            (state.track_direction == TrackDirection::CLOCKWISE) ? 1.0f : -1.0f;
         float recovery_reverse_steer = -recovery_forward_steer;
 
         uint32_t phase_time_us =
@@ -441,11 +459,7 @@ void loop() {
         if (total_recovery_time_us >=
             static_cast<uint32_t>(config::wrong_way_turnaround_timeout_ms) *
                 1000) {
-          if (state.track_direction == TrackDirection::COUNTER_CLOCKWISE) {
-            max_forward_yaw = state.imu.measurement.yaw;
-          } else {
-            min_forward_yaw = state.imu.measurement.yaw;
-          }
+          max_forward_yaw = min_forward_yaw = state.imu.measurement.yaw;
           wrong_way_start_us = 0;
           reset_pid(state.steering_pid);
           seed_pid = true;
@@ -497,11 +511,7 @@ void loop() {
           if (yaw_deviation <= config::wrong_way_resume_threshold_deg ||
               (obstacle && phase_time_us >= 250000) ||
               phase_time_us >= 600000) {
-            if (state.track_direction == TrackDirection::COUNTER_CLOCKWISE) {
-              max_forward_yaw = state.imu.measurement.yaw;
-            } else {
-              min_forward_yaw = state.imu.measurement.yaw;
-            }
+            max_forward_yaw = min_forward_yaw = state.imu.measurement.yaw;
             wrong_way_start_us = 0;
             reset_pid(state.steering_pid);
             seed_pid = true;
