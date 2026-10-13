@@ -2,12 +2,69 @@
 #include "../prefs/prefs.h"
 #include "../state.h"
 #include "ble.h"
+#include "sensor_snapshots.h"
+#include "sensors/health.h"
 #include <Arduino.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
 extern RobotState state;
+
+static void format_distance(const SensorData &sensor, char *out, size_t size) {
+  if (sensor_policy::available(sensor, state.current_time_us))
+    snprintf(out, size, "%u", sensor.distance_mm);
+  else
+    snprintf(out, size, "%s", sensor_health_to_str(sensor.health));
+}
+
+// One bounded reply per slot; optionally request a single slot (0..7).
+void cmd_sensors(char *args) {
+  static const char *names[] = {"front",   "right",   "left",    "side_fl",
+                                "side_rl", "side_fr", "side_rr", "imu"};
+  int first = 0, last = 7;
+  if (args && *args) {
+    char *end = nullptr;
+    long slot = strtol(args, &end, 10);
+    if (end == args || slot < 0 || slot > 7) {
+      notify("sensors [0..7]\n");
+      return;
+    }
+    first = last = static_cast<int>(slot);
+  }
+  for (int i = first; i <= last; ++i) {
+    const SensorData *distance =
+        i < 7 ? sensor_policy::distances(state, i) : nullptr;
+    const SensorStatus &status =
+        distance ? static_cast<const SensorStatus &>(*distance)
+                 : static_cast<const SensorStatus &>(state.imu);
+    if (distance) {
+      notify("%d %s %s age=%u errors=%lu streak=%u error=%u "
+             "last_mm=%u raw_mm=%u status=0x%02x internal=%u raw_age=%u\n",
+             i, names[i], sensor_health_to_str(status.health),
+             sensor_policy::age_ms(status.timestamp_us, state.current_time_us),
+             static_cast<unsigned long>(status.error_count),
+             status.consecutive_errors,
+             static_cast<unsigned>(status.last_error), distance->distance_mm,
+             distance->raw_range_mm, distance->raw_status,
+             (distance->raw_status & 0x78) >> 3,
+             sensor_policy::age_ms(distance->raw_timestamp_us,
+                                   state.current_time_us));
+    } else {
+      notify("7 imu %s age=%u errors=%lu streak=%u error=%u\n",
+             sensor_health_to_str(status.health),
+             sensor_policy::age_ms(status.timestamp_us, state.current_time_us),
+             static_cast<unsigned long>(status.error_count),
+             status.consecutive_errors,
+             static_cast<unsigned>(status.last_error));
+    }
+  }
+  notify("ages in ms; 65535 means no sample. taskstats: task timing/stacks\n");
+}
+
+// Implemented by the project using thread-safe snapshot peeks, without I2C.
+extern void sensor_task_diagnostics();
+void cmd_taskstats(char *) { sensor_task_diagnostics(); }
 
 void cmd_start(char *args) {
   state.running_state = RunningState::COUNTDOWN;
@@ -168,8 +225,12 @@ void cmd_dist(char *args) {
       }
     }
   }
-  notify("dist front %u, left %u, right %u, far %u, rev %u\n", state.dist_front,
-         state.dist_left, state.dist_right, state.dist_far, state.dist_reverse);
+  char front[16], left[16], right[16];
+  format_distance(state.dist_front, front, sizeof(front));
+  format_distance(state.dist_left, left, sizeof(left));
+  format_distance(state.dist_right, right, sizeof(right));
+  notify("dist front %s, left %s, right %s, far %u, rev %u\n", front, left,
+         right, state.dist_far, state.dist_reverse);
 }
 
 void cmd_save(char *args) {
@@ -183,20 +244,17 @@ void cmd_load(char *args) {
 }
 
 void cmd_state(char *args) {
-  notify("state: %s\n"
-         "pid: kp=%.4f ki=%.4f kd=%.4f offset=%.2f\n"
-         "throt: base=%.2f str=%.2f rev=%.2f\n"
-         "dist: f=%u l=%u r=%u far=%u rev=%u\n"
-         "curr: steer=%.2f throt=%.2f\n",
-         running_state_to_str(state.running_state), state.steering_pid.Kp,
-         state.steering_pid.Ki, state.steering_pid.Kd,
-         state.steering_pid.offset, state.base_throttle,
-         state.straight_throttle, state.reverse_throttle, state.dist_front,
-         state.dist_left, state.dist_right, state.dist_far, state.dist_reverse,
-         state.current_steering, state.current_throttle);
+  notify("state %s, steer %.2f throttle %.2f\n",
+         running_state_to_str(state.running_state), state.current_steering,
+         state.current_throttle);
+  cmd_dist(nullptr);
+  cmd_k(nullptr);
+  cmd_speed(nullptr);
 }
 
 void cmd_help(char *args) {
+  notify(
+      " sensors [0..7] - health/raw diagnostics\n taskstats - timing/stacks\n");
   notify("Commands:\n"
          " start - countdown\n"
          " stop - idle / stop\n"
@@ -210,11 +268,14 @@ void cmd_help(char *args) {
 }
 
 CommandEntry command_list[] = {
-    {"start", cmd_start}, {"stop", cmd_stop},     {"state", cmd_state},
-    {"k", cmd_k},         {"pid", cmd_k},         {"speed", cmd_speed},
-    {"throt", cmd_speed}, {"offset", cmd_offset}, {"o", cmd_offset},
-    {"dist", cmd_dist},   {"save", cmd_save},     {"load", cmd_load},
-    {"help", cmd_help},   {"?", cmd_help},
+    {"sensors", cmd_sensors}, {"taskstats", cmd_taskstats},
+    {"start", cmd_start},     {"stop", cmd_stop},
+    {"state", cmd_state},     {"k", cmd_k},
+    {"pid", cmd_k},           {"speed", cmd_speed},
+    {"throt", cmd_speed},     {"offset", cmd_offset},
+    {"o", cmd_offset},        {"dist", cmd_dist},
+    {"save", cmd_save},       {"load", cmd_load},
+    {"help", cmd_help},       {"?", cmd_help},
 };
 
 void handle_command(char *command, char *args) {

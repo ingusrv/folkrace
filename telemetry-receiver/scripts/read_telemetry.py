@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Folkrace Telemetry Serial Reader & PlotJuggler UDP Forwarder
-Reads JSON lines emitted by the ESP32 telemetry-receiver over Serial
-and forwards them as JSON datagrams to PlotJuggler via UDP.
+Decodes COBS/CRC binary records from the ESP32 receiver and forwards
+host-generated JSON datagrams to PlotJuggler via UDP.
 """
 
 import argparse
@@ -10,7 +10,7 @@ import json
 import socket
 import sys
 import time
-import serial
+from telemetry_decoder import StreamDecoder
 
 
 ROBOT_COLORS = {
@@ -123,93 +123,65 @@ def main():
             if not args.flat:
                 print("  -> Robot curves will be namespaced: /sniegbaltite/..., /rosepink/...")
 
-    print(f"Opening {port} at {baud} baud...")
-    try:
-        ser = serial.Serial(port, baud, timeout=1.0)
-    except serial.SerialException as e:
-        print(f"Failed to open serial port: {e}")
-        sys.exit(1)
-
-    time.sleep(1.0)  # Wait for serial reset if applicable
-    start_time = time.time()
-    print("Listening for telemetry packets (Ctrl+C to exit)...")
-
+    import serial
+    start_time = time.monotonic()
+    last_console = {}
+    ser = None
     try:
         while True:
-            raw_line = ser.readline()
-            if not raw_line:
-                continue
-
             try:
-                line_str = raw_line.decode("utf-8", errors="replace").strip()
-                if not line_str.startswith("{"):
-                    if line_str and not args.quiet:
-                        print(f"[ESP32] {line_str}")
-                    continue
-
-                data = json.loads(line_str)
-                robot_name = data.get("robot", "unknown").lower()
-
-                # Filter by robot if requested
-                if filter_robot and robot_name != filter_robot:
-                    continue
-
-                # Synchronized race timestamp across all robots (seconds from script start)
-                host_timestamp = time.time() - start_time
-                data["robot_time_ms"] = data.get("time", 0)
-                data["timestamp"] = host_timestamp
-
-                # Expand arrays into explicit named scalar fields for cleaner PlotJuggler curve names
-                if "accel" in data and isinstance(data["accel"], list) and len(data["accel"]) == 3:
-                    data["accel_x"], data["accel_y"], data["accel_z"] = data["accel"]
-                if "gyro" in data and isinstance(data["gyro"], list) and len(data["gyro"]) == 3:
-                    data["gyro_x"], data["gyro_y"], data["gyro_z"] = data["gyro"]
-                if "euler" in data and isinstance(data["euler"], list) and len(data["euler"]) == 3:
-                    data["roll"], data["pitch"], data["yaw"] = data["euler"]
-
-                # Forward to PlotJuggler via UDP
-                if sock:
-                    target_port = args.udp_port
-                    if args.multi_port:
-                        port_offset = ROBOT_PORT_OFFSETS.get(robot_name, len(ROBOT_PORT_OFFSETS))
-                        target_port = args.udp_port + port_offset
-
-                    # Structure payload: namespaced unless --flat is requested
-                    if args.flat:
-                        payload_dict = data
-                    else:
-                        payload_dict = {
-                            "timestamp": host_timestamp,
-                            robot_name: data,
-                        }
-
-                    try:
-                        udp_payload = json.dumps(payload_dict).encode("utf-8")
-                        sock.sendto(udp_payload, (args.udp_ip, target_port))
-                    except OSError:
-                        pass
-
-                if not args.quiet:
-                    color = ROBOT_COLORS.get(robot_name, "\033[97m")
-                    flags = data.get("flags", 0)
-                    dir_str = "CW " if (flags & 4) else "CCW"
-                    print(
-                        f"[{color}{robot_name:<12}{COLOR_RESET}] "
-                        f"[{data.get('time', 0):>7} ms] "
-                        f"Dir: {dir_str} "
-                        f"State: {data.get('state', 'UNKNOWN'):<12} "
-                        f"Dist: (F:{data.get('dist_front', 0):>4}, R:{data.get('dist_right', 0):>4}, L:{data.get('dist_left', 0):>4}) "
-                        f"Side: (FL:{data.get('dist_side_fl', 0):>4}, RL:{data.get('dist_side_rl', 0):>4}, FR:{data.get('dist_side_fr', 0):>4}, RR:{data.get('dist_side_rr', 0):>4}) "
-                        f"Steer: {data.get('current_steering', 0):>6.2f} "
-                        f"Throt: {data.get('current_throttle', 0):>6.2f} "
-                        f"PID err: {data.get('pid_error', 0):>7.4f}"
-                    )
-            except json.JSONDecodeError:
-                pass
+                if ser is None:
+                    print(f"Opening {port} at {baud} baud...", file=sys.stderr)
+                    ser = serial.Serial(port, baud, timeout=0.1)
+                    decoder = StreamDecoder()  # Reconnect resets framing and receiver time.
+                    last_console.clear()
+                chunk = ser.read(min(4096, max(1, ser.in_waiting)))
+                for data in decoder.feed(chunk):
+                    robot_name = data["robot"]
+                    if filter_robot and robot_name != filter_robot:
+                        continue
+                    host_timestamp = time.monotonic() - start_time
+                    data["timestamp"] = host_timestamp
+                    data["host_time_s"] = host_timestamp
+                    if sock:
+                        target_port = args.udp_port
+                        if args.multi_port:
+                            target_port += ROBOT_PORT_OFFSETS.get(robot_name, len(ROBOT_PORT_OFFSETS))
+                        payload = data if args.flat else {"timestamp": host_timestamp, robot_name: data}
+                        try:
+                            sock.sendto(json.dumps(payload, allow_nan=False).encode("utf-8"),
+                                        (args.udp_ip, target_port))
+                        except OSError:
+                            pass
+                    if not args.quiet and host_timestamp - last_console.get(robot_name, -1) >= 0.2:
+                        last_console[robot_name] = host_timestamp
+                        color = ROBOT_COLORS.get(robot_name, "\033[97m")
+                        sensors = []
+                        for item in data["sensors"]:
+                            text = f"{item['slot']}={item['health_name']} age={item['age_ms']}"
+                            text += f" err={item['last_error_name']}/{item['error_count']}"
+                            if "raw_age_ms" in item:
+                                text += (" raw=none" if item["raw_age_ms"] is None else
+                                         f" raw={item['raw_range_mm']}/{item['raw_status']:02x}"
+                                         f"(code={item['raw_internal_status']},age={item['raw_age_ms']})")
+                            sensors.append(text)
+                        print(f"[{color}{robot_name}{COLOR_RESET}] {data['time']}ms "
+                              f"{data['state']} F={data['dist_front']} "
+                              f"throttle={data['current_throttle']} "
+                              f"drops={data['receiver_queue_drops']} "
+                              f"gaps={data['receiver_sequence_gaps']} "
+                              f"decode_errors={data['serial_decode_errors']} " + " | ".join(sensors))
+            except (serial.SerialException, OSError) as error:
+                print(f"Serial connection lost: {error}; retrying...", file=sys.stderr)
+                if ser:
+                    ser.close()
+                ser = None
+                time.sleep(1)
     except KeyboardInterrupt:
-        print("\nExiting telemetry reader.")
+        print("\nExiting telemetry reader.", file=sys.stderr)
     finally:
-        ser.close()
+        if ser:
+            ser.close()
         if sock:
             sock.close()
 

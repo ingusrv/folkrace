@@ -72,18 +72,113 @@ struct IMUState {
   float yaw;
 };
 
+enum class SensorHealth : uint8_t {
+  ABSENT,        // Robot does not populate this distance/IMU slot
+  INITIALIZING,  // Initializing or waiting for first sample
+  OK,            // Actively acquiring valid samples
+  STALE,         // Sample exceeded freshness limit
+  READ_ERROR,    // Transport or device hardware failure
+  OFFLINE,       // Unavailable: recovery backoff or IMU disabled until reboot
+  RECOVERING,    // Bus reset or XSHUT sequencing in progress
+  RANGE_INVALID, // Device returned a result, but distance is unreliable
+};
+
+inline const char *sensor_health_to_str(SensorHealth h) {
+  switch (h) {
+  case SensorHealth::ABSENT:
+    return "ABSENT";
+  case SensorHealth::INITIALIZING:
+    return "INIT";
+  case SensorHealth::OK:
+    return "OK";
+  case SensorHealth::STALE:
+    return "STALE";
+  case SensorHealth::READ_ERROR:
+    return "ERROR";
+  case SensorHealth::OFFLINE:
+    return "OFFLINE";
+  case SensorHealth::RECOVERING:
+    return "RECOVER";
+  case SensorHealth::RANGE_INVALID:
+    return "RANGE_INVALID";
+  default:
+    return "UNKNOWN";
+  }
+}
+
+enum class SensorError : uint8_t {
+  NONE,
+  NACK,
+  TIMEOUT,
+  SHORT_READ,
+  BUS_ERROR,
+  INIT_FAILED,
+  CONFIG_FAILED,
+  MEASUREMENT_TIMEOUT,
+  HARDWARE_ERROR,
+};
+
+enum class SensorSlot : uint8_t {
+  FRONT = 0,
+  RIGHT = 1,
+  LEFT = 2,
+  SIDE_FRONT_LEFT = 3,
+  SIDE_REAR_LEFT = 4,
+  SIDE_FRONT_RIGHT = 5,
+  SIDE_REAR_RIGHT = 6,
+  IMU = 7,
+  COUNT = 8,
+};
+
+struct SensorStatus {
+  uint32_t timestamp_us = 0; // Last successful measurement timestamp
+  SensorHealth health = SensorHealth::INITIALIZING;
+  uint32_t error_count = 0;
+  uint16_t consecutive_errors = 0;
+  SensorError last_error = SensorError::NONE;
+};
+
+struct SensorData : SensorStatus {
+  uint16_t distance_mm = 0;
+  uint16_t raw_range_mm = 0; // Unclamped VL53L0X result, including sentinels
+  uint8_t raw_status = 0;    // Full RESULT_RANGE_STATUS register
+  uint32_t raw_timestamp_us = 0; // Zero until a complete checked result
+};
+
+struct IMUSensorData : SensorStatus {
+  IMUState measurement = {};
+};
+
+inline bool is_sensor_fresh(uint32_t timestamp_us, uint32_t now_us,
+                            uint32_t max_age_us) {
+  return (timestamp_us != 0) &&
+         (static_cast<uint32_t>(now_us - timestamp_us) <= max_age_us);
+}
+
+inline bool is_sensor_available(const SensorData &s, uint32_t now_us,
+                                uint32_t max_age_us) {
+  return (s.health == SensorHealth::OK) &&
+         is_sensor_fresh(s.timestamp_us, now_us, max_age_us);
+}
+
+inline bool is_imu_available(const IMUSensorData &s, uint32_t now_us,
+                             uint32_t max_age_us) {
+  return (s.health == SensorHealth::OK) &&
+         is_sensor_fresh(s.timestamp_us, now_us, max_age_us);
+}
+
 struct RobotState {
   RunningState running_state;
   uint32_t current_time_ms;
   uint32_t current_time_us;
   uint32_t maneuver_start_us;
-  uint16_t dist_front;
-  uint16_t dist_right;
-  uint16_t dist_left;
-  uint16_t dist_side_front_left;
-  uint16_t dist_side_rear_left;
-  uint16_t dist_side_front_right;
-  uint16_t dist_side_rear_right;
+  SensorData dist_front;
+  SensorData dist_right;
+  SensorData dist_left;
+  SensorData dist_side_front_left;
+  SensorData dist_side_rear_left;
+  SensorData dist_side_front_right;
+  SensorData dist_side_rear_right;
   uint16_t dist_far;
   uint16_t dist_reverse;
   float target_steering;
@@ -96,7 +191,7 @@ struct RobotState {
   float reverse_throttle;
 
   PIDState steering_pid;
-  IMUState imu;
+  IMUSensorData imu;
 
   TrackDirection track_direction;
 };
