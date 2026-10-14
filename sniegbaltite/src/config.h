@@ -20,7 +20,7 @@ constexpr uint32_t battery_low_blink_interval_ms = 500; // Each on/off phase
 constexpr uint32_t sensor_freshness_imu_us = 50000;  // 50 ms max age
 constexpr uint32_t sensor_freshness_tof_us = 100000; // 100 ms max age
 constexpr uint16_t sensor_max_consecutive_errors = 3;
-// Racing policy for checked status-4/6 sentinel results observed in open space.
+// Racing policy for checked status-4/6 and status-9/8190 sentinel returns.
 // Weak returns are assumed beyond sensor_max_raw, still reported NO_RETURN.
 constexpr bool tof_allow_no_return = true;
 
@@ -68,14 +68,13 @@ constexpr uint16_t reverse_total_timeout_ms = 900; // ms: includes throttle ramp
 constexpr uint16_t reverse_trigger_delay_ms = 60;
 // Stall detection while commanding forward drive.
 constexpr uint32_t stall_timeout_ms = 2000;       // ms: no significant movement
-constexpr uint16_t stall_distance_change_mm = 30; // mm: cumulative ToF change
-constexpr float stall_rotation_change_deg = 3.0f; // deg: cumulative rotation
-constexpr float stall_accel_change_mps2 = 0.8f; // m/s^2: filtered vector change
-constexpr uint32_t stall_accel_filter_us = 200000; // us: suppress vibration
+constexpr uint16_t stall_distance_change_mm = 30; // mm: half-window mean change
+constexpr float stall_rotation_change_deg = 15.0f; // deg: mean yaw change
+constexpr uint8_t stall_min_valid_percent = 80; // %: real returns in each half
 constexpr float stall_min_throttle = 0.03f;        // normalized forward command
 // Escalate repeated short reverses into a timed rocking maneuver.
 constexpr uint8_t escape_reverse_attempts = 5;
-constexpr uint32_t escape_clear_forward_ms = 3000; // ms: clear attempt history
+constexpr uint32_t escape_clear_forward_ms = 500; // ms: clear attempt history
 constexpr uint32_t escape_backup_ms = 700;       // ms: straight reverse command
 constexpr uint32_t escape_reverse_turn_ms = 650; // ms: reverse at full lock
 constexpr uint32_t escape_forward_ms = 600;  // ms: forward rock at full lock

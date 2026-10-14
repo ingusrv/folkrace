@@ -26,12 +26,15 @@ inline bool accept_range(SensorData &out, uint16_t raw, uint8_t status,
     return false;
   }
   out.consecutive_errors = 0;
-  // Observed on Sniegbaltite in open space: signal failure 4 / 8191 and
-  // phase failure 6 / 8190. They prove a live result stream, not clear space.
-  // Permit only these exact sentinel classes under an explicit racing policy;
-  // preserve NO_RETURN quality rather than claiming a valid measurement.
-  if (allow_no_return && (code == 4 || code == 6) &&
-      (raw == 8190 || raw == 8191)) {
+  // Observed on Sniegbaltite in open space: status 4/6 sentinel returns,
+  // plus status 9 / 8190 in the 2026-10-14_10-05-53 run. These prove a live
+  // result stream, not clear space. Permit only these sentinel classes under
+  // the explicit racing policy, preserving NO_RETURN rather than claiming a
+  // valid measurement. Non-sentinel status-9 results remain unavailable.
+  bool no_return = ((code == 4 || code == 6) &&
+                    (raw == 8190 || raw == 8191)) ||
+                   (code == 9 && raw == 8190);
+  if (allow_no_return && no_return) {
     out.distance_mm = maximum;
     out.timestamp_us = now;
     out.health = SensorHealth::NO_RETURN;

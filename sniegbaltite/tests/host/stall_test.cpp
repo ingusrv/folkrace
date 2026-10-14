@@ -40,30 +40,71 @@ static void quiet_and_sensor_only_stalls() {
   }
 }
 
-static void cumulative_movement_and_imu_motion() {
-  for (unsigned moving_slot = 0; moving_slot < 7; ++moving_slot) {
+static void sustained_progress() {
+  for (unsigned moving_slot = 1; moving_slot < 7; ++moving_slot) {
     StallDetector detector;
     auto s = running();
-    for (uint32_t t = 1000; t <= 5001000; t += 10000) {
+    for (uint32_t t = 1000; t <= 6001000; t += 10000) {
+      // Translation is corroborated by another beam, even at constant speed.
+      s.dist_front.distance_mm = 400 + (t - 1000) / 20000;
       sensor_policy::distances(s, moving_slot)->distance_mm =
-          400 + (t - 1000) / 20000; // Slow drift, small frame-to-frame changes.
+          400 + (t - 1000) / 20000;
       assert(!tick(detector, s, t, false));
     }
   }
-  for (unsigned axis = 0; axis < 4; ++axis) {
+  StallDetector detector;
+  auto s = running();
+  for (uint32_t t = 1000; t <= 6001000; t += 10000) {
+    s.imu.measurement.yaw = (t - 1000) * 30.0f * 1e-6f;
+    assert(!tick(detector, s, t));
+  }
+}
+
+static void vibration_and_outliers() {
+  StallDetector detector;
+  auto s = running();
+  for (uint32_t t = 1000; t <= 2001000; t += 10000) {
+    bool alternate = (t / 10000) % 2;
+    s.dist_front.distance_mm = alternate ? 550 : 400;
+    s.dist_side_front_right.distance_mm = alternate ? 1000 : 700;
+    s.imu.measurement.roll = alternate ? 40.0f : -40.0f;
+    s.imu.measurement.pitch = alternate ? 8.0f : -8.0f;
+    s.imu.measurement.accel_x = alternate ? 12.0f : -12.0f;
+    s.imu.measurement.yaw = alternate ? 2.0f : -2.0f;
+    s.current_time_us = t;
+    for (unsigned i = 0; i < 7; ++i)
+      sensor_policy::success(*sensor_policy::distances(s, i), t);
+    s.dist_side_front_right.health =
+        alternate ? SensorHealth::NO_RETURN : SensorHealth::OK;
+    sensor_policy::success(s.imu, t);
+    assert(detector.update(s, true, 1) == (t == 2001000));
+  }
+  // A single sustained range change also cannot veto four quiet wall beams.
+  detector.reset();
+  s = running();
+  for (uint32_t t = 1000; t <= 2001000; t += 10000) {
+    s.dist_front.distance_mm = 400 + (t - 1000) / 20000;
+    assert(tick(detector, s, t) == (t == 2001000));
+  }
+}
+
+static void optional_sensor_changes_and_blind_ranges() {
+  for (bool blind : {false, true}) {
     StallDetector detector;
     auto s = running();
-    for (uint32_t t = 1000; t <= 5001000; t += 10000) {
-      float elapsed = (t - 1000) * 1e-6f;
-      if (axis == 0)
-        s.imu.measurement.yaw = elapsed * 5.0f;
-      else if (axis == 1)
-        s.imu.measurement.pitch = elapsed * 5.0f;
-      else if (axis == 2)
-        s.imu.measurement.roll = elapsed * 5.0f;
-      else
-        s.imu.measurement.accel_x = elapsed * 2.0f;
-      assert(!tick(detector, s, t));
+    for (uint32_t t = 1000; t <= 2001000; t += 10000) {
+      s.current_time_us = t;
+      for (unsigned i = 0; i < 7; ++i) {
+        auto &beam = *sensor_policy::distances(s, i);
+        sensor_policy::success(beam, t);
+        if (blind) {
+          beam.health = SensorHealth::NO_RETURN;
+          beam.distance_mm = 1000;
+        }
+      }
+      if (!blind && (t / 10000) % 2)
+        s.dist_side_rear_right.health = SensorHealth::READ_ERROR;
+      assert(detector.update(s, false, 1) == (!blind && t == 2001000));
     }
   }
 }
@@ -71,47 +112,47 @@ static void cumulative_movement_and_imu_motion() {
 static void modes_freshness_and_wrap() {
   StallDetector detector;
   auto s = running();
-  assert(!tick(detector, s, 1000));
-  // An unavailable IMU's arbitrary values cannot postpone sensor-only stall.
-  s.imu.measurement.yaw = 1000.0f;
-  assert(!tick(detector, s, 1901000, false));
-  s.imu.measurement.yaw = -1000.0f;
-  assert(!tick(detector, s, 3900000, false));
-  assert(tick(detector, s, 3901000, false));
-  assert(!tick(detector, s, 3911000, true));    // IMU returned: restart.
-  assert(!tick(detector, s, 5901000, true, 2)); // Fusion reset: restart.
-  assert(!tick(detector, s, 7900000, true, 2));
-  assert(tick(detector, s, 7901000, true, 2));
-
   for (RunningState mode :
        {RunningState::IDLE, RunningState::COUNTDOWN, RunningState::REVERSE,
         RunningState::REVERSE_TURN, RunningState::WRONG_WAY_RECOVERY}) {
     s.running_state = mode;
-    assert(!tick(detector, s, 8001000));
+    assert(!tick(detector, s, 1000));
     s.running_state = RunningState::RUNNING;
-    assert(!tick(detector, s, 8011000));
+    assert(!tick(detector, s, 11000));
   }
   s.current_throttle = -0.1f;
-  assert(!tick(detector, s, 11001000));
+  assert(!tick(detector, s, 1001000));
   s.current_throttle = 0.3f;
   s.target_throttle = 0.0f;
-  assert(!tick(detector, s, 13001000));
+  assert(!tick(detector, s, 2001000));
   s.target_throttle = 0.3f;
-  assert(!tick(detector, s, 13011000));
-  s.current_time_us = 13211000; // No new frames: stale sensors cannot stall.
+  assert(!tick(detector, s, 2011000));
+  s.current_time_us = 2211000; // No new frames: stale sensors cannot stall.
   assert(!detector.update(s, false, 1));
-  assert(!tick(detector, s, 15011000));
 
   detector.reset();
   uint32_t start_us = UINT32_MAX - 1000000;
-  assert(!tick(detector, s, start_us, false));
-  assert(!tick(detector, s, start_us + 1990000U, false));
-  assert(tick(detector, s, start_us + 2000000U, false));
+  for (uint32_t elapsed = 0; elapsed <= 2000000; elapsed += 10000)
+    assert(tick(detector, s, start_us + elapsed, false) ==
+           (elapsed == 2000000));
+
+  for (unsigned change = 0; change < 2; ++change) {
+    detector.reset();
+    s = running();
+    for (uint32_t t = 1000; t <= 3001000; t += 10000) {
+      bool returned = t >= 1001000;
+      bool imu_ready = change == 0 ? returned : true;
+      uint32_t generation = change == 1 && returned ? 2 : 1;
+      assert(tick(detector, s, t, imu_ready, generation) == (t == 3001000));
+    }
+  }
 }
 
 int main() {
   quiet_and_sensor_only_stalls();
-  cumulative_movement_and_imu_motion();
+  sustained_progress();
+  vibration_and_outliers();
+  optional_sensor_changes_and_blind_ranges();
   modes_freshness_and_wrap();
   puts("stall detection tests passed");
 }

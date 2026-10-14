@@ -3,8 +3,8 @@
 #include "obstacle_navigation.h"
 #include "state.h"
 
-// Keep recovery history across ordinary reverses. Only sustained clear forward
-// drive counts as success; shaking sensors or brief RUNNING ticks do not.
+// Clear the attempt count after sustained clear forward driving or as soon as
+// the forced rocking maneuver finishes.
 class EscapeRecovery {
 public:
   void reset() {
@@ -16,7 +16,7 @@ public:
 
   void observe(const RobotState &s, uint16_t reverse_distance_mm) {
     bool clear =
-        s.running_state == RunningState::RUNNING &&
+        !active() && s.running_state == RunningState::RUNNING &&
         s.current_throttle > config::stall_min_throttle &&
         s.target_throttle > config::stall_min_throttle &&
         sensor_policy::available(s.dist_front, s.current_time_us) &&
@@ -99,6 +99,8 @@ private:
 
   void finish(RobotState &s) {
     m_phase = Phase::INACTIVE;
+    m_attempts = 0;
+    m_clear_tracking = false;
     s.running_state = RunningState::RUNNING;
     s.target_throttle = s.target_steering = 0.0f;
   }

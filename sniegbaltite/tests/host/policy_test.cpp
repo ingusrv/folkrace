@@ -188,7 +188,7 @@ static void quality_and_telemetry() {
   state.dist_right.raw_status = 0x58;
   state.dist_right.raw_timestamp_us = 995000;
   auto p = make_telemetry(state, 0);
-  assert(sizeof(p) == 184 && p.protocol_version == 1);
+  assert(sizeof(p) == 188 && p.protocol_version == TELEMETRY_PROTOCOL_VERSION);
   assert(p.raw_tof[1].range_mm == 1234 && p.raw_tof[1].age_ms == 5);
   assert(p.sensors[1].age_ms == 10 && p.sensors[2].error_count == UINT16_MAX);
   assert(p.raw_tof[0].age_ms == UINT16_MAX);
@@ -196,8 +196,10 @@ static void quality_and_telemetry() {
   assert(!is_sensor_fresh(0, 10, 100));
 }
 static void open_space_racing_fallback() {
-  for (uint8_t code : {4, 6}) {
+  for (uint8_t code : {4, 6, 9}) {
     for (uint16_t raw : {8190, 8191}) {
+      if (code == 9 && raw != 8190)
+        continue;
       SensorData strict = distance(120, 100);
       sensor_policy::accept_range(strict, raw, code << 3, 200, 30, 1000);
       assert(strict.health == SensorHealth::RANGE_INVALID);
@@ -220,10 +222,11 @@ static void open_space_racing_fallback() {
     sensor_policy::accept_range(sample, 8191, code << 3, 200, 30, 1000, true);
     assert(!sensor_policy::available(sample, 200));
   }
-  SensorData near;
-  sensor_policy::accept_range(near, 80, 4 << 3, 200, 30, 1000, true);
-  assert(
-      !sensor_policy::available(near, 200)); // Weak non-sentinel isn't clear.
+  for (uint8_t code : {4, 6, 9}) {
+    SensorData near;
+    sensor_policy::accept_range(near, 80, code << 3, 200, 30, 1000, true);
+    assert(!sensor_policy::available(near, 200)); // Non-sentinel stays invalid.
+  }
 
   TwoWire bus;
   sensor_policy::Settings settings;

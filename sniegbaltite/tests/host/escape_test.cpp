@@ -1,6 +1,7 @@
 #include "escape_recovery.h"
 #include <cassert>
 #include <cstdio>
+#include <initializer_list>
 
 static RobotState trapped(uint32_t now_us) {
   RobotState s{};
@@ -21,14 +22,10 @@ static RobotState trapped(uint32_t now_us) {
 static void repeated_attempts_rock_and_alternate() {
   EscapeRecovery escape;
   auto s = trapped(817757000);
-  assert(!escape.begin_attempt(s, 1.0f));
-  s.current_time_us = 818327000;
-  assert(!escape.begin_attempt(s, 1.0f));
-  s.current_time_us = 818887000;
-  assert(!escape.begin_attempt(s, 1.0f));
-  s.current_time_us = 819457000;
-  assert(!escape.begin_attempt(s, 1.0f));
-  s = trapped(820027000); // Fifth reverse in the recorded repeating sequence.
+  for (unsigned i = 1; i < config::escape_reverse_attempts; ++i) {
+    assert(!escape.begin_attempt(s, 1.0f));
+    s = trapped(s.current_time_us + 570000U);
+  }
   assert(escape.begin_attempt(s, 1.0f));
   s.current_throttle = 0.1f;
   escape.update(s);
@@ -65,6 +62,8 @@ static void repeated_attempts_rock_and_alternate() {
   s.current_time_us += 1000;
   escape.update(s);
   assert(!escape.active() && s.target_throttle == 0.0f);
+  for (unsigned i = 1; i < config::escape_reverse_attempts; ++i)
+    assert(!escape.begin_attempt(s, 1.0f));
   assert(escape.begin_attempt(s, 1.0f));
   s.current_throttle = -0.2f;
   escape.update(s);
@@ -76,46 +75,22 @@ static void repeated_attempts_rock_and_alternate() {
   assert(!escape.begin_attempt(s, 1.0f));
 }
 
-static void clear_drive_timeout_and_wrap() {
+static void timeout_resets_attempts_and_wrap() {
   EscapeRecovery escape;
   auto s = trapped(1000);
-  for (unsigned i = 1; i < config::escape_reverse_attempts; ++i)
+  for (unsigned i = 1; i < config::escape_reverse_attempts; ++i) {
     assert(!escape.begin_attempt(s, 1.0f));
-  s.current_throttle = s.target_throttle = 0.3f;
-  escape.observe(s, 220); // Close front cannot clear history.
-  s.current_time_us += 4000000;
-  escape.observe(s, 220);
+    // Elapsed time between ordinary reverses does not clear the count.
+    s.current_time_us += 10000000U;
+  }
   assert(escape.begin_attempt(s, 1.0f));
   s.current_throttle = 0.0f; // No reverse command: total timeout still exits.
   s.current_time_us += config::escape_timeout_ms * 1000U;
   escape.update(s);
   assert(!escape.active());
-
-  s = trapped(10000000);
-  s.dist_front.distance_mm = 600;
-  s.current_throttle = s.target_throttle = 0.3f;
-  escape.observe(s, 220);
-  s.current_time_us += 2000000;
-  sensor_policy::success(s.dist_front, s.current_time_us);
-  escape.observe(s, 220);
-  s.current_throttle = -0.2f;
-  escape.observe(s, 220); // Interrupted drive must restart the success timer.
-  s.current_throttle = 0.3f;
-  escape.observe(s, 220);
-  s.current_time_us += 2990000;
-  sensor_policy::success(s.dist_front, s.current_time_us);
-  escape.observe(s, 220);
-  assert(escape.begin_attempt(s, 1.0f)); // Still remembers failed attempts.
-  s.current_time_us += config::escape_timeout_ms * 1000U;
-  escape.update(s);
-  s.current_throttle = s.target_throttle = 0.3f;
-  sensor_policy::success(s.dist_front, s.current_time_us);
-  escape.observe(s, 220);
-  s.current_time_us += 3000000;
-  sensor_policy::success(s.dist_front, s.current_time_us);
-  escape.observe(s, 220);
-  assert(
-      !escape.begin_attempt(s, 1.0f)); // Sustained clear drive clears history.
+  for (unsigned i = 1; i < config::escape_reverse_attempts; ++i)
+    assert(!escape.begin_attempt(s, 1.0f));
+  assert(escape.begin_attempt(s, 1.0f));
 
   escape.reset();
   s = trapped(UINT32_MAX - 1000000);
@@ -134,8 +109,51 @@ static void clear_drive_timeout_and_wrap() {
   assert(s.running_state == RunningState::RUNNING && escape.active());
 }
 
+static void clear_forward_resets_after_500ms() {
+  for (uint32_t start_us : {1000U, UINT32_MAX - 200000U}) {
+    EscapeRecovery escape;
+    auto s = trapped(start_us);
+    for (unsigned i = 1; i < config::escape_reverse_attempts; ++i)
+      assert(!escape.begin_attempt(s, 1.0f));
+    s.current_throttle = s.target_throttle = 0.3f;
+    escape.observe(s, 220); // Close front does not start the timer.
+    s.current_time_us += 500000U;
+    escape.observe(s, 220);
+    s.dist_front.distance_mm = 600;
+    sensor_policy::success(s.dist_front, s.current_time_us);
+    escape.observe(s, 220);
+    s.current_time_us += 499000U;
+    sensor_policy::success(s.dist_front, s.current_time_us);
+    escape.observe(s, 220);
+    assert(escape.begin_attempt(s, 1.0f)); // 499 ms retains the count.
+
+    s.current_time_us += config::escape_timeout_ms * 1000U;
+    escape.update(s);
+    for (unsigned i = 1; i < config::escape_reverse_attempts; ++i)
+      assert(!escape.begin_attempt(s, 1.0f));
+    s.running_state = RunningState::RUNNING;
+    s.current_throttle = s.target_throttle = 0.3f;
+    sensor_policy::success(s.dist_front, s.current_time_us);
+    escape.observe(s, 220);
+    s.current_time_us += 499000U;
+    sensor_policy::success(s.dist_front, s.current_time_us);
+    escape.observe(s, 220);
+    s.current_throttle = -0.2f;
+    escape.observe(s, 220); // Interrupted forward drive restarts the timer.
+    s.current_throttle = 0.3f;
+    escape.observe(s, 220);
+    s.current_time_us += 500000U;
+    sensor_policy::success(s.dist_front, s.current_time_us);
+    escape.observe(s, 220);
+    for (unsigned i = 1; i < config::escape_reverse_attempts; ++i)
+      assert(!escape.begin_attempt(s, 1.0f));
+    assert(escape.begin_attempt(s, 1.0f));
+  }
+}
+
 int main() {
   repeated_attempts_rock_and_alternate();
-  clear_drive_timeout_and_wrap();
+  timeout_resets_attempts_and_wrap();
+  clear_forward_resets_after_500ms();
   puts("repeated reverse escape tests passed");
 }

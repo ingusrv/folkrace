@@ -43,3 +43,11 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   -I"$shared_dir/src" -I"$project_dir/src" \
   "$host_tests/escape_test.cpp" -o "$build_dir/escape_test"
 "$build_dir/escape_test"
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$shared_dir/src" -I"$project_dir/src" \
+  "$host_tests/stall_replay_test.cpp" -o "$build_dir/stall_replay_test"
+"$build_dir/stall_replay_test" "$host_tests/fixtures/stall_2026-10-14.txt"
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$host_tests/fakes" -I"$shared_dir/src" \
+  "$host_tests/no_return_replay_test.cpp" -o "$build_dir/no_return_replay_test"
+"$build_dir/no_return_replay_test" "$host_tests/fixtures/no_return_2026-10-14.txt"
