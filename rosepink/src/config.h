@@ -2,6 +2,20 @@
 #include <stdint.h>
 
 namespace config {
+// LiPo protection: select 2 for 2S or 3 for 3S; cutoff stays latched until
+// reboot.
+constexpr uint8_t battery_cells = 2;
+static_assert(battery_cells == 2 || battery_cells == 3,
+              "Select a 2S or 3S LiPo pack");
+constexpr uint16_t battery_cutoff_per_cell_mv = 3400; // mV per cell
+constexpr uint32_t battery_cutoff_mv =
+    battery_cells * battery_cutoff_per_cell_mv;
+// 10k from battery to GPIO, 2.2k to ground, 0.1uF across the 2.2k.
+constexpr float battery_divider_ratio = (10000.0f + 2200.0f) / 2200.0f;
+constexpr uint32_t battery_sample_interval_ms = 50;
+constexpr uint32_t battery_cutoff_confirm_ms = 1000;
+constexpr uint32_t battery_low_blink_interval_ms = 500; // Each on/off phase
+
 // Sensor freshness limits
 constexpr uint32_t sensor_freshness_imu_us = 50000;  // 50 ms max age
 constexpr uint32_t sensor_freshness_tof_us = 100000; // 100 ms max age
@@ -89,6 +103,7 @@ constexpr bool side_right_flip_y = false;
 } // namespace config
 
 namespace pin {
+constexpr uint8_t battery_adc = 15;
 constexpr uint8_t esc = 2;
 constexpr uint8_t servo = 1;
 

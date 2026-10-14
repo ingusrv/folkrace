@@ -9,13 +9,13 @@ constexpr size_t frame_size = sizeof(PacketHeader) + sizeof(TelemetryPacket);
 constexpr size_t decoded_size = 15 + frame_size + 4;
 constexpr size_t encoded_size = decoded_size + decoded_size / 254 + 2;
 constexpr uint8_t version = 1;
-static_assert(frame_size == 192 && decoded_size == 211 && encoded_size == 213,
+static_assert(frame_size == 196 && decoded_size == 215 && encoded_size == 217,
               "Update serial bandwidth budget and host decoder");
 struct Frame {
   uint32_t sequence, arrival_us;
   uint8_t bytes[frame_size];
 };
-static_assert(sizeof(Frame) == 200, "Receiver queue item size");
+static_assert(sizeof(Frame) == 204, "Receiver queue item size");
 /** Validate an exact supported radio frame before copying or enqueueing it. */
 inline bool valid(const uint8_t *data, size_t length) {
   if (length != frame_size)

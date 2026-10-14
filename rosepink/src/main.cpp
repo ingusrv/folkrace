@@ -1,5 +1,6 @@
 #include "ble/ble.h"
 #include "config.h"
+#include "control/battery_monitor.h"
 #include "control/pid.h"
 #include "control/sensor_guidance.h"
 #include "control/sensor_led.h"
@@ -27,6 +28,7 @@ static MainSensorSnapshot main_snapshot;
 static SideSensorSnapshot side_snapshot;
 static SensorStartup startup;
 static SensorLED sensor_led;
+static BatteryMonitor battery_monitor;
 static bool sensors_started = false;
 static bool was_inhibited = true;
 static bool seed_pid = true;
@@ -81,10 +83,15 @@ void setup() {
 
   drive_motor.init();
   steer_servo.init();
+  battery_monitor.begin(pin::battery_adc, config::battery_cutoff_mv,
+                        config::battery_divider_ratio,
+                        config::battery_sample_interval_ms,
+                        config::battery_cutoff_confirm_ms);
   bool led_started = sensor_led.begin(
       pin::rgb_led_pin, config::rgb_led_brightness, config::imu_offline_led_r,
       config::imu_offline_led_g, config::imu_offline_led_b,
-      config::imu_offline_blink_interval_ms);
+      config::imu_offline_blink_interval_ms,
+      config::battery_low_blink_interval_ms);
   sensors_started = sensors::init() && led_started;
 
   pinMode(pin::direction_switch, INPUT_PULLUP);
@@ -131,7 +138,8 @@ static void send_telemetry() {
     flags |= (1 << 4);
   }
 
-  TelemetryPacket pkt = make_telemetry(state, flags);
+  TelemetryPacket pkt = make_telemetry(
+      state, flags, true, battery_monitor.voltage_mv() / 1000.0f);
 
   uint8_t buffer[sizeof(PacketHeader) + sizeof(TelemetryPacket)];
   memcpy(buffer, &header, sizeof(PacketHeader));
@@ -243,6 +251,14 @@ void loop() {
       yaw_deviation = state.imu.measurement.yaw - min_forward_yaw;
     }
 
+    if (battery_monitor.update(state.current_time_ms)) {
+      notify("[BATTERY] cutoff: %.2f V (limit %.2f V), reboot required\n",
+             battery_monitor.voltage_mv() / 1000.0f,
+             config::battery_cutoff_mv / 1000.0f);
+    }
+    if (battery_monitor.cutoff())
+      state.running_state = RunningState::IDLE;
+
     // Handle state transition edge triggers (e.g., triggered via BLE)
     if (state.running_state != prev_running_state) {
       if (state.running_state == RunningState::COUNTDOWN) {
@@ -273,7 +289,8 @@ void loop() {
         config::imu_calib_extension_ms, config::imu_min_calib_samples,
         sensors::send_command);
     bool inhibited = !required_ready || startup.pending();
-    bool skip_control = sensor_motion_inhibit(state, inhibited);
+    bool skip_control = sensor_motion_inhibit(state, inhibited) ||
+                        battery_monitor.cutoff();
     if (skip_control) {
       recovery_phase_start_us = 0;
       recovery_phase = 0;
@@ -291,7 +308,7 @@ void loop() {
     was_inhibited = inhibited;
     sensor_led.update(state.imu.health,
                       state.running_state == RunningState::COUNTDOWN,
-                      required_ready);
+                      required_ready, battery_monitor.cutoff());
     if (state.running_state == RunningState::COUNTDOWN &&
         (!countdown_ready || !required_ready)) {
       static uint32_t last_reason_ms = 0;
@@ -514,7 +531,16 @@ void loop() {
       }
 
     // Actuator outputs and slew rate limiting (when active)
-    if (state.running_state != RunningState::IDLE) {
+    if (battery_monitor.cutoff()) {
+      // Override every state/BLE command and bypass throttle slew on cutoff.
+      state.running_state = RunningState::IDLE;
+      state.target_throttle = state.current_throttle = 0.0f;
+      state.target_steering = state.current_steering = 0.0f;
+      throttle_limiter.reset(0.0f);
+      steering_limiter.reset(0.0f);
+      drive_motor.stop();
+      steer_servo.write(config::servo_deg_middle);
+    } else if (state.running_state != RunningState::IDLE) {
       state.current_throttle =
           throttle_limiter.update(state.target_throttle, delta_time);
       state.current_steering =

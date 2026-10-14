@@ -4,6 +4,11 @@
 .vscode/launch.json
 .vscode/ipch
 
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Telemetry CSV recordings
 csv/
 scripts/csv/

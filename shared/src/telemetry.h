@@ -2,12 +2,20 @@
 #include "protocol.h"
 #include "sensors/health.h"
 
-/** Build protocol v1 diagnostics from the control tick's copied state. */
+/** Build telemetry from the control tick's copied state.
+ * @param s Current robot state.
+ * @param flags Robot status flags.
+ * @param diagonals Whether front diagonal sensors are required.
+ * @param battery_voltage_v Measured pack voltage in V, or 0 without a monitor.
+ * @return Protocol v2 payload including battery voltage and sensor diagnostics.
+ */
 inline TelemetryPacket make_telemetry(const RobotState &s, uint8_t flags,
-                                      bool diagonals = true) {
+                                      bool diagonals = true,
+                                      float battery_voltage_v = 0.0f) {
   TelemetryPacket p = {};
   p.protocol_version = TELEMETRY_PROTOCOL_VERSION;
   p.timestamp_ms = s.current_time_ms;
+  p.battery_voltage_v = battery_voltage_v;
   p.running_state = s.running_state;
   p.flags = flags |
             (sensor_policy::required(s, s.current_time_us, diagonals) ? 8 : 0);

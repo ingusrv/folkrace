@@ -9,7 +9,7 @@ int main() {
   PacketHeader header{message_magic, PacketType::TELEMETRY, RobotId::ROSEPINK,
                       sizeof(TelemetryPacket)};
   TelemetryPacket packet{};
-  packet.protocol_version = 1;
+  packet.protocol_version = TELEMETRY_PROTOCOL_VERSION;
   packet.timestamp_ms = 0x12345678;
   packet.running_state = RunningState::REVERSE_TURN;
   packet.flags = 0x1d;
@@ -21,6 +21,7 @@ int main() {
   packet.accel_x = 9.5f;
   packet.gyro_z = -3.25f;
   packet.yaw = 179.5f;
+  packet.battery_voltage_v = 7.625f;
   for (unsigned i = 0; i < 8; ++i)
     packet.sensors[i] = {uint8_t(i), uint16_t(i * 13), uint16_t(i * 17),
                          uint16_t(i), uint8_t(i)};
@@ -37,12 +38,12 @@ int main() {
   assert(valid(frame.bytes, frame_size));
   assert(!valid(frame.bytes, frame_size - 1));
   assert(!valid(frame.bytes, frame_size + 1));
-  frame.bytes[8] = 2;
-  assert(!valid(frame.bytes, frame_size));
   frame.bytes[8] = 1;
+  assert(!valid(frame.bytes, frame_size));
+  frame.bytes[8] = TELEMETRY_PROTOCOL_VERSION;
   frame.bytes[6] = 0;
   assert(!valid(frame.bytes, frame_size));
-  frame.bytes[6] = 184;
+  frame.bytes[6] = sizeof(TelemetryPacket);
   uint8_t out[encoded_size];
   size_t size = encode(frame, 7, out);
   assert(size <= encoded_size);

@@ -8,6 +8,12 @@ STATES = ("IDLE", "COUNTDOWN", "RUNNING", "REVERSE", "REVERSE_TURN", "WRONG_WAY_
 HEALTH = ("ABSENT", "INIT", "OK", "STALE", "ERROR", "OFFLINE", "RECOVER", "RANGE_INVALID", "NO_RETURN")
 ERRORS = ("NONE", "NACK", "TIMEOUT", "SHORT_READ", "BUS_ERROR", "INIT_FAILED", "CONFIG_FAILED", "MEASUREMENT_TIMEOUT", "HARDWARE_ERROR")
 SLOTS = ("front", "right", "left", "side_fl", "side_rl", "side_fr", "side_rr", "imu")
+PACKET_SIZE = 188
+FRAME_SIZE = 8 + PACKET_SIZE
+DECODED_SIZE = 15 + FRAME_SIZE + 4
+MAX_ENCODED_SIZE = DECODED_SIZE + DECODED_SIZE // 254 + 1
+TELEMETRY_VERSION = 2
+
 FLOATS = ("target_steering", "current_steering", "target_throttle", "current_throttle",
           "pid_error", "pid_integral", "pid_derivative", "accel_x", "accel_y", "accel_z",
           "gyro_x", "gyro_y", "gyro_z", "roll", "pitch", "yaw")
@@ -30,19 +36,19 @@ def cobs_decode(encoded):
 
 def decode_record(encoded):
     raw = cobs_decode(encoded)
-    if len(raw) != 211:
+    if len(raw) != DECODED_SIZE:
         raise ValueError("serial length")
-    if zlib.crc32(raw[:-4]) != struct.unpack_from("<I", raw, 207)[0]:
+    if zlib.crc32(raw[:-4]) != struct.unpack_from("<I", raw, len(raw) - 4)[0]:
         raise ValueError("CRC")
     version, sequence, arrival, drops, length = struct.unpack_from("<BIIIH", raw)
-    if version != 1 or length != 192:
+    if version != 1 or length != FRAME_SIZE:
         raise ValueError("serial version/length")
     magic, kind, robot, packet_length = struct.unpack_from("<IBBH", raw, 15)
-    if magic != 0x4B4C4F46 or kind != 0 or packet_length != 184:
+    if magic != 0x4B4C4F46 or kind != 0 or packet_length != PACKET_SIZE:
         raise ValueError("radio header")
-    p = memoryview(raw)[23:207]
+    p = memoryview(raw)[23:-4]
     version, time_ms, state, flags = struct.unpack_from("<BIBB", p)
-    if version != 1:
+    if version != TELEMETRY_VERSION:
         raise ValueError("telemetry version")
     data = {"robot": ROBOTS.get(robot, "unknown"), "robot_id": robot,
             "protocol_version": version, "time": time_ms, "robot_time_ms": time_ms,
@@ -73,12 +79,14 @@ def decode_record(encoded):
                         raw_internal_status=(status & 0x78) >> 3 if present else None,
                         raw_age_ms=raw_age if present else None)
         sensors.append(item)
+    voltage, = struct.unpack_from("<f", p, 184)
+    data["battery_voltage_v"] = voltage if math.isfinite(voltage) else None
     data["sensors"] = sensors
     return data
 
 
 class StreamDecoder:
-    """At most 212 encoded bytes buffered; discard overflow through delimiter.
+    """At most 216 encoded bytes buffered; discard overflow through delimiter.
 
     Sequence gaps are receiver/serial/host loss, not radio-air loss. A backwards
     sequence or receiver-clock jump starts a new receiver epoch. Reconnect creates
@@ -99,7 +107,7 @@ class StreamDecoder:
         for value in chunk:
             if value:
                 if not self.discard:
-                    if len(self.buffer) == 212:
+                    if len(self.buffer) == MAX_ENCODED_SIZE:
                         self.buffer.clear()
                         self.discard = True
                         self.decode_errors += 1

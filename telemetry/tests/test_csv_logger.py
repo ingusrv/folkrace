@@ -62,7 +62,7 @@ class CsvLoggerTests(unittest.TestCase):
         sample_data = {
             "robot": "sniegbaltite",
             "robot_id": 1,
-            "protocol_version": 1,
+            "protocol_version": 2,
             "time": 12345,
             "robot_time_ms": 12345,
             "timestamp": 12.345,
@@ -88,6 +88,7 @@ class CsvLoggerTests(unittest.TestCase):
             "current_steering": 0.20,
             "target_throttle": 0.8,
             "current_throttle": 0.75,
+            "battery_voltage_v": 10.875,
             "pid_error": -0.05,
             "pid_integral": 0.01,
             "pid_derivative": 0.02,
@@ -132,6 +133,7 @@ class CsvLoggerTests(unittest.TestCase):
             self.assertEqual(row["flag_ble_connected"], "0")
             self.assertEqual(row["dist_front"], "500")
             self.assertEqual(row["target_steering"], "0.25")
+            self.assertEqual(row["battery_voltage_v"], "10.88")
             self.assertEqual(row["sensor_front_health_name"], "OK")
             self.assertEqual(row["sensor_front_raw_range_mm"], "512")
             self.assertEqual(row["sensor_imu_health_name"], "")
@@ -158,6 +160,7 @@ class CsvLoggerTests(unittest.TestCase):
             self.assertEqual(row["accel_x"], "9.50")
             self.assertEqual(row["gyro_z"], "-3.25")
             self.assertEqual(row["yaw"], "179.50")
+            self.assertEqual(row["battery_voltage_v"], "7.62")
             self.assertEqual(row["sensor_right_raw_range_mm"], "8190")
             self.assertEqual(row["sensor_left_raw_range_mm"], "8191")
             self.assertEqual(row["sensor_left_raw_status"], str(0x50))

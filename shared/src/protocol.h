@@ -40,7 +40,7 @@ struct __attribute__((packed)) PacketHeader {
   uint16_t length;
 };
 
-constexpr uint8_t TELEMETRY_PROTOCOL_VERSION = 1;
+constexpr uint8_t TELEMETRY_PROTOCOL_VERSION = 2;
 
 struct __attribute__((packed)) SensorDiagnostic {
   uint8_t health;       // SensorHealth (1 byte)
@@ -56,8 +56,8 @@ struct __attribute__((packed)) RawTofDiagnostic {
   uint16_t age_ms;   // Raw result age; 0xFFFF = no raw sample
 }; // Total: 5 bytes per distance slot
 
-struct __attribute__((packed)) TelemetryPacketV1 {
-  uint8_t protocol_version; // TELEMETRY_PROTOCOL_VERSION = 1
+struct __attribute__((packed)) TelemetryPacketV2 {
+  uint8_t protocol_version; // TELEMETRY_PROTOCOL_VERSION = 2
   uint32_t timestamp_ms;
   RunningState running_state;
   uint8_t flags; // Bit 0: obstacle, Bit 1: BLE, Bit 2: CW, Bit 3: required
@@ -94,14 +94,16 @@ struct __attribute__((packed)) TelemetryPacketV1 {
   SensorDiagnostic sensors[8]; // Order: FRONT, RIGHT, LEFT, SIDE_FL, SIDE_RL,
                                // SIDE_FR, SIDE_RR, IMU
   RawTofDiagnostic raw_tof[7]; // Same distance-slot order, excludes IMU
+
+  float battery_voltage_v; // Pack voltage in V; 0 for robots without a monitor
 };
 
 static_assert(sizeof(SensorDiagnostic) == 8, "SensorDiagnostic size mismatch");
 static_assert(sizeof(RawTofDiagnostic) == 5, "RawTofDiagnostic size mismatch");
-static_assert(sizeof(TelemetryPacketV1) == 184,
-              "TelemetryPacketV1 size mismatch");
+static_assert(sizeof(TelemetryPacketV2) == 188,
+              "TelemetryPacketV2 size mismatch");
 
-using TelemetryPacket = TelemetryPacketV1;
+using TelemetryPacket = TelemetryPacketV2;
 static_assert(sizeof(PacketHeader) == 8, "PacketHeader size mismatch");
-static_assert(sizeof(PacketHeader) + sizeof(TelemetryPacketV1) <= 250,
+static_assert(sizeof(PacketHeader) + sizeof(TelemetryPacketV2) <= 250,
               "telemetry must fit ESP-NOW v1");

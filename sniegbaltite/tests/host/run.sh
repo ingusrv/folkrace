@@ -35,3 +35,11 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   -I"$shared_dir/src" -I"$project_dir/src" \
   "$host_tests/navigation_test.cpp" -o "$build_dir/navigation_test"
 "$build_dir/navigation_test"
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$shared_dir/src" -I"$project_dir/src" \
+  "$host_tests/stall_test.cpp" -o "$build_dir/stall_test"
+"$build_dir/stall_test"
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$shared_dir/src" -I"$project_dir/src" \
+  "$host_tests/escape_test.cpp" -o "$build_dir/escape_test"
+"$build_dir/escape_test"

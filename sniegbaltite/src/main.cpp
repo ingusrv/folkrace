@@ -1,5 +1,6 @@
 #include "ble/ble.h"
 #include "config.h"
+#include "control/battery_monitor.h"
 #include "control/pid.h"
 #include "control/sensor_guidance.h"
 #include "control/sensor_led.h"
@@ -8,11 +9,13 @@
 #include "control/slew_rate_limiter.h"
 #include "driver/esc.h"
 #include "driver/servo.h"
+#include "escape_recovery.h"
 #include "obstacle_navigation.h"
 #include "prefs/prefs.h"
 #include "protocol.h"
 #include "sensors.h"
 #include "sensors/health.h"
+#include "stall_detector.h"
 #include "state.h"
 #include "telemetry.h"
 #include "util.h"
@@ -28,6 +31,7 @@ static MainSensorSnapshot main_snapshot;
 static SideSensorSnapshot side_snapshot;
 static SensorStartup startup;
 static SensorLED sensor_led;
+static BatteryMonitor battery_monitor;
 static bool sensors_started = false;
 static bool was_inhibited = true;
 static bool seed_pid = true;
@@ -46,6 +50,8 @@ static bool obstacle_detected = false;
 static RunningState prev_running_state = RunningState::IDLE;
 static ObstacleAvoidance obstacle_avoidance;
 static ReverseRecovery reverse_recovery;
+static EscapeRecovery escape_recovery;
+static StallDetector stall_detector;
 static bool resume_centering = false;
 
 static float max_forward_yaw = 0.0f;
@@ -84,10 +90,15 @@ void setup() {
 
   drive_motor.init();
   steer_servo.init();
+  battery_monitor.begin(pin::battery_adc, config::battery_cutoff_mv,
+                        config::battery_divider_ratio,
+                        config::battery_sample_interval_ms,
+                        config::battery_cutoff_confirm_ms);
   bool led_started = sensor_led.begin(
       pin::rgb_led_pin, config::rgb_led_brightness, config::imu_offline_led_r,
       config::imu_offline_led_g, config::imu_offline_led_b,
-      config::imu_offline_blink_interval_ms);
+      config::imu_offline_blink_interval_ms,
+      config::battery_low_blink_interval_ms);
   sensors_started = sensors::init() && led_started;
 
   pinMode(pin::direction_switch, INPUT_PULLUP);
@@ -135,7 +146,8 @@ static void send_telemetry() {
     flags |= (1 << 4);
   }
 
-  TelemetryPacket pkt = make_telemetry(state, flags);
+  TelemetryPacket pkt = make_telemetry(
+      state, flags, true, battery_monitor.voltage_mv() / 1000.0f);
 
   uint8_t buffer[sizeof(PacketHeader) + sizeof(TelemetryPacket)];
   memcpy(buffer, &header, sizeof(PacketHeader));
@@ -239,15 +251,25 @@ void loop() {
                                       max_forward_yaw, min_forward_yaw)
                   : 0.0f;
 
+    if (battery_monitor.update(state.current_time_ms)) {
+      notify("[BATTERY] cutoff: %.2f V (limit %.2f V), reboot required\n",
+             battery_monitor.voltage_mv() / 1000.0f,
+             config::battery_cutoff_mv / 1000.0f);
+    }
+    if (battery_monitor.cutoff())
+      state.running_state = RunningState::IDLE;
+
     // Handle state transition edge triggers (e.g., triggered via BLE)
     if (state.running_state != prev_running_state) {
       if (state.running_state == RunningState::COUNTDOWN) {
         countdown_start_ms = state.current_time_ms;
         startup.enter(countdown_start_ms);
+        escape_recovery.reset();
         obstacle_avoidance.reset();
         reverse_recovery.reset();
         resume_centering = false;
       } else if (state.running_state == RunningState::IDLE) {
+        escape_recovery.reset();
         reset_pid(state.steering_pid);
         seed_pid = true;
         throttle_limiter.reset(0.0f);
@@ -260,6 +282,7 @@ void loop() {
         reverse_recovery.reset();
         resume_centering = false;
       } else if (state.running_state == RunningState::WRONG_WAY_RECOVERY) {
+        escape_recovery.reset();
         recovery_phase = 1;
         recovery_phase_start_us = state.current_time_us;
       }
@@ -272,8 +295,10 @@ void loop() {
         config::imu_calib_extension_ms, config::imu_min_calib_samples,
         sensors::send_command);
     bool inhibited = !required_ready || startup.pending();
-    bool skip_control = sensor_motion_inhibit(state, inhibited);
+    bool skip_control = sensor_motion_inhibit(state, inhibited) ||
+                        battery_monitor.cutoff();
     if (skip_control) {
+      escape_recovery.reset();
       recovery_phase_start_us = 0;
       recovery_phase = 0;
       obstacle_detected = false;
@@ -293,7 +318,7 @@ void loop() {
     was_inhibited = inhibited;
     sensor_led.update(state.imu.health,
                       state.running_state == RunningState::COUNTDOWN,
-                      required_ready);
+                      required_ready, battery_monitor.cutoff());
     if (state.running_state == RunningState::COUNTDOWN &&
         (!countdown_ready || !required_ready)) {
       static uint32_t last_reason_ms = 0;
@@ -305,7 +330,24 @@ void loop() {
     }
 
     // Main State Machine
-    if (!skip_control)
+    if (skip_control || escape_recovery.active() ||
+        state.running_state != RunningState::RUNNING || resume_centering)
+      stall_detector.reset();
+    if (!skip_control && escape_recovery.active()) {
+      // Own the complete rock, including its short forward phase. Ordinary
+      // obstacle detection must not immediately cancel forward rocking.
+      escape_recovery.update(state);
+      if (!escape_recovery.active()) {
+        notify("[RUN] escape complete, resuming\n");
+        reset_pid(state.steering_pid);
+        seed_pid = true;
+        reverse_recovery.reset();
+        obstacle_avoidance.resume(state.current_time_us);
+        obstacle_detected = false;
+        obstacle_start_us = wrong_way_start_us = 0;
+        resume_centering = state.current_throttle < 0.0f;
+      }
+    } else if (!skip_control)
       switch (state.running_state) {
       case RunningState::IDLE:
         state.target_throttle = 0.0f;
@@ -334,6 +376,10 @@ void loop() {
         break;
 
       case RunningState::RUNNING: {
+        uint16_t rev_dist = state.dist_reverse > 0
+                                ? state.dist_reverse
+                                : config::default_dist_reverse;
+        escape_recovery.observe(state, rev_dist);
         if (resume_centering && state.current_throttle >= 0.0f) {
           resume_centering = false;
           obstacle_avoidance.resume(state.current_time_us);
@@ -359,10 +405,8 @@ void loop() {
         }
 
         // Front obstacle detection
-        uint16_t rev_dist = (state.dist_reverse > 0)
-                                ? state.dist_reverse
-                                : config::default_dist_reverse;
         bool obstacle = (state.dist_front.distance_mm < rev_dist);
+        bool obstacle_confirmed = false;
         if (obstacle) {
           if (!obstacle_detected) {
             obstacle_detected = true;
@@ -370,18 +414,36 @@ void loop() {
           } else if (state.current_time_us - obstacle_start_us >=
                      static_cast<uint32_t>(config::reverse_trigger_delay_ms) *
                          1000) {
-            state.running_state = RunningState::REVERSE;
-            state.maneuver_start_us = state.current_time_us;
-            reverse_recovery.begin(state, obstacle_avoidance.direction(),
-                                   imu_ready, orientation_generation);
-            state.target_throttle = -state.reverse_throttle;
-            state.target_steering = 0.0f;
-            resume_centering = false;
-            obstacle_detected = false;
-            break;
+            obstacle_confirmed = true;
           }
         } else {
           obstacle_detected = false;
+        }
+
+        bool stalled = !resume_centering &&
+                       stall_detector.update(state, imu_ready,
+                                             orientation_generation);
+        if (obstacle_confirmed || stalled) {
+          if (stalled)
+            notify("[RUN] stalled for %lu ms (%s), reversing\n",
+                   static_cast<unsigned long>(config::stall_timeout_ms),
+                   imu_ready ? "IMU + distance" : "distance only");
+          state.running_state = RunningState::REVERSE;
+          state.maneuver_start_us = state.current_time_us;
+          if (escape_recovery.begin_attempt(state,
+                                             obstacle_avoidance.direction())) {
+            notify("[RUN] repeated reverses, trying timed escape\n");
+            reverse_recovery.reset();
+          } else {
+            reverse_recovery.begin(state, obstacle_avoidance.direction(),
+                                   imu_ready, orientation_generation);
+          }
+          state.target_throttle = -state.reverse_throttle;
+          state.target_steering = 0.0f;
+          resume_centering = false;
+          obstacle_detected = false;
+          stall_detector.reset();
+          break;
         }
 
         SensorGuidance guidance =
@@ -524,7 +586,16 @@ void loop() {
       }
 
     // Actuator outputs and slew rate limiting (when active)
-    if (state.running_state != RunningState::IDLE) {
+    if (battery_monitor.cutoff()) {
+      // Override every state/BLE command and bypass throttle slew on cutoff.
+      state.running_state = RunningState::IDLE;
+      state.target_throttle = state.current_throttle = 0.0f;
+      state.target_steering = state.current_steering = 0.0f;
+      throttle_limiter.reset(0.0f);
+      steering_limiter.reset(0.0f);
+      drive_motor.stop();
+      steer_servo.write(config::servo_deg_middle);
+    } else if (state.running_state != RunningState::IDLE) {
       state.current_throttle =
           throttle_limiter.update(state.target_throttle, delta_time);
       state.current_steering =

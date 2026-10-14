@@ -2,6 +2,20 @@
 #include <stdint.h>
 
 namespace config {
+// LiPo protection: select 2 for 2S or 3 for 3S; cutoff stays latched until
+// reboot.
+constexpr uint8_t battery_cells = 3;
+static_assert(battery_cells == 2 || battery_cells == 3,
+              "Select a 2S or 3S LiPo pack");
+constexpr uint16_t battery_cutoff_per_cell_mv = 3450; // mV per cell
+constexpr uint32_t battery_cutoff_mv =
+    battery_cells * battery_cutoff_per_cell_mv;
+// 10k from battery to GPIO, 2.2k to ground, 0.1uF across the 2.2k.
+constexpr float battery_divider_ratio = (10000.0f + 2200.0f) / 2200.0f;
+constexpr uint32_t battery_sample_interval_ms = 50;
+constexpr uint32_t battery_cutoff_confirm_ms = 500;
+constexpr uint32_t battery_low_blink_interval_ms = 500; // Each on/off phase
+
 // Sensor freshness limits
 constexpr uint32_t sensor_freshness_imu_us = 50000;  // 50 ms max age
 constexpr uint32_t sensor_freshness_tof_us = 100000; // 100 ms max age
@@ -52,7 +66,21 @@ constexpr uint16_t reverse_turn_duration_ms = 250; // ms: turn time, maximum
 constexpr uint16_t reverse_total_timeout_ms = 900; // ms: includes throttle ramp
 // ms: confirm a close obstacle while forward throttle ramps toward zero.
 constexpr uint16_t reverse_trigger_delay_ms = 60;
-constexpr float reverse_max_yaw_deg = 30.0f;     // deg: total recovery rotation
+// Stall detection while commanding forward drive.
+constexpr uint32_t stall_timeout_ms = 2000;       // ms: no significant movement
+constexpr uint16_t stall_distance_change_mm = 30; // mm: cumulative ToF change
+constexpr float stall_rotation_change_deg = 3.0f; // deg: cumulative rotation
+constexpr float stall_accel_change_mps2 = 0.8f; // m/s^2: filtered vector change
+constexpr uint32_t stall_accel_filter_us = 200000; // us: suppress vibration
+constexpr float stall_min_throttle = 0.03f;        // normalized forward command
+// Escalate repeated short reverses into a timed rocking maneuver.
+constexpr uint8_t escape_reverse_attempts = 5;
+constexpr uint32_t escape_clear_forward_ms = 3000; // ms: clear attempt history
+constexpr uint32_t escape_backup_ms = 700;       // ms: straight reverse command
+constexpr uint32_t escape_reverse_turn_ms = 650; // ms: reverse at full lock
+constexpr uint32_t escape_forward_ms = 600;  // ms: forward rock at full lock
+constexpr uint32_t escape_timeout_ms = 4000; // ms: includes throttle ramps
+constexpr float reverse_max_yaw_deg = 30.0f; // deg: total recovery rotation
 constexpr float reverse_motion_throttle = 0.03f; // commanded reverse magnitude
 constexpr uint16_t reverse_clearance_margin_mm = 100;
 constexpr uint16_t avoidance_direction_margin_mm = 60; // ignore gap noise
@@ -93,6 +121,7 @@ constexpr uint8_t rgb_led_brightness = 32;
 } // namespace config
 
 namespace pin {
+constexpr uint8_t battery_adc = 15;
 constexpr uint8_t esc = 2;
 constexpr uint8_t servo = 1;
 

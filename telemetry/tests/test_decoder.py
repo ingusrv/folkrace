@@ -10,7 +10,7 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from telemetry_decoder import StreamDecoder, cobs_decode
+from telemetry_decoder import MAX_ENCODED_SIZE, StreamDecoder, cobs_decode
 
 
 def cobs_encode(raw):
@@ -48,7 +48,7 @@ class DecoderTests(unittest.TestCase):
             struct.pack_into("<I", raw, 5, arrival)
         if change:
             raw[change[0]] = change[1]
-        struct.pack_into("<I", raw, 207, zlib.crc32(raw[:207]))
+        struct.pack_into("<I", raw, len(raw) - 4, zlib.crc32(raw[:-4]))
         return cobs_encode(raw)
 
     def test_cpp_fixture_fields(self):
@@ -61,6 +61,8 @@ class DecoderTests(unittest.TestCase):
         self.assertEqual(data["accel_x"], 9.5)
         self.assertEqual(data["gyro_z"], -3.25)
         self.assertEqual(data["yaw"], 179.5)
+        self.assertEqual(data["protocol_version"], 2)
+        self.assertEqual(data["battery_voltage_v"], 7.625)
         self.assertEqual(data["receiver_queue_drops"], 7)
         self.assertIsNone(data["sensors"][0]["age_ms"])
         self.assertEqual(data["sensors"][1]["raw_range_mm"], 8190)
@@ -93,14 +95,14 @@ class DecoderTests(unittest.TestCase):
         bad_frames = [b"boot output\r\n\0", b"\xffshort\0", b"a" * 10000 + b"\0",
                       self.fixture[20:], self.fixture[:100] + b"\0",
                       cobs_encode(bad_crc)]
-        for offset, value in [(0, 2), (13, 191), (15, 0), (19, 1), (21, 183), (23, 2)]:
+        for offset, value in [(0, 2), (13, 191), (15, 0), (19, 1), (21, 183), (23, 1)]:
             bad_frames.append(self.record(change=(offset, value)))
         for bad in bad_frames:
             decoder = StreamDecoder()
             packets = decoder.feed(bad + self.fixture)
             self.assertEqual(len(packets), 1)
             self.assertGreater(decoder.decode_errors, 0)
-            self.assertLessEqual(len(decoder.buffer), 212)
+            self.assertLessEqual(len(decoder.buffer), MAX_ENCODED_SIZE)
         decoder = StreamDecoder()
         decoder.feed(b"x" * 100000)
         self.assertEqual(len(decoder.buffer), 0)
@@ -119,7 +121,7 @@ class DecoderTests(unittest.TestCase):
         self.assertEqual(reconnected["receiver_sequence_gaps"], 0)
 
     def test_four_robot_bandwidth_and_decoder_throughput(self):
-        self.assertLessEqual(len(self.fixture) * 4 * 30, 25560)
+        self.assertLessEqual(len(self.fixture) * 4 * 30, 26040)
         stream = b"".join(self.record(i, i * 8333) for i in range(1200))
         start = time.monotonic()
         packets = StreamDecoder().feed(stream)

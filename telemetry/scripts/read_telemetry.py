@@ -67,6 +67,7 @@ CSV_BASE_FIELDS = [
     "current_steering",
     "target_throttle",
     "current_throttle",
+    "battery_voltage_v",
     "pid_error",
     "pid_integral",
     "pid_derivative",
@@ -152,6 +153,7 @@ def telemetry_to_row(data):
         "current_steering": format_csv_value(data.get("current_steering")),
         "target_throttle": format_csv_value(data.get("target_throttle")),
         "current_throttle": format_csv_value(data.get("current_throttle")),
+        "battery_voltage_v": format_csv_value(data.get("battery_voltage_v")),
         "pid_error": format_csv_value(data.get("pid_error")),
         "pid_integral": format_csv_value(data.get("pid_integral")),
         "pid_derivative": format_csv_value(data.get("pid_derivative")),
@@ -378,11 +380,13 @@ def main():
                                          f" raw={item['raw_range_mm']}/{item['raw_status']:02x}"
                                          f"(code={item['raw_internal_status']},age={item['raw_age_ms']})")
                             sensors.append(text)
+                        battery = data["battery_voltage_v"]
+                        battery_text = f"{battery:.2f}V" if battery is not None else "?V"
                         throt = data["current_throttle"]
                         throt_str = f"{throt:.2f}" if isinstance(throt, (int, float)) and math.isfinite(throt) else str(throt)
                         if throt_str == "-0.00":
                             throt_str = "0.00"
-                        print(f"[{color}{robot_name}{COLOR_RESET}] {data['time']}ms "
+                        print(f"[{color}{robot_name}{COLOR_RESET}] {data['time']}ms Bat:{battery_text} "
                               f"{data['state']} F={data['dist_front']} "
                               f"throttle={throt_str} "
                               f"drops={data['receiver_queue_drops']} "
