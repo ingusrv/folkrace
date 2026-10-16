@@ -62,7 +62,7 @@ constexpr uint16_t reverse_min_duration_ms = 100;  // ms: before clearance exit
 constexpr uint16_t reverse_turn_duration_ms = 250; // ms: turn time, maximum
 constexpr uint16_t reverse_total_timeout_ms = 900; // ms: includes throttle ramp
 // ms: confirm a close obstacle while forward throttle ramps toward zero.
-constexpr uint16_t reverse_trigger_delay_ms = 60;
+constexpr uint16_t reverse_trigger_delay_ms = 100;
 // Stall detection while commanding forward drive.
 constexpr uint32_t stall_timeout_ms = 2000;       // ms: no significant movement
 constexpr uint16_t stall_distance_change_mm = 30; // mm: half-window mean change
