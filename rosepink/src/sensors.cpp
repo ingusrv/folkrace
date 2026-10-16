@@ -31,8 +31,8 @@ void cadence(TickType_t &wake) {
 }
 void main_sensor_task(void *) {
   sensor_policy::MainSensorOwner owner(
-      Wire, pin::sda, pin::scl, -1, pin::xshut_left, pin::xshut_right,
-      config::sensor_min_raw, config::sensor_max_raw,
+      Wire, pin::sda, pin::scl, pin::xshut_front, pin::xshut_left,
+      pin::xshut_right, config::sensor_min_raw, config::sensor_max_raw,
       config::tof_timing_budget_us, main_queue, command_queue,
       config::imu_min_calib_samples, config::imu_max_init_attempts_per_boot,
       settings);
@@ -58,13 +58,14 @@ struct SideDevice {
   SparkFun_VL53L5CX driver;
   VL53L5CX_ResultsData result = {};
   SensorData front, rear;
+  SideWallEstimate wall;
   sensor_policy::Backoff backoff;
   bool active = false, pending = true;
   uint32_t result_us = 0, grace_us = 0;
 };
 struct SideOwner {
   SideDevice devices[2];
-  SideSensorSnapshot s;
+  RosepinkSideSnapshot s;
   sensor_policy::Backoff bus_backoff;
   bool group_pending = true;
   void publish() {
@@ -72,6 +73,8 @@ struct SideOwner {
     s.dist_side_rear_left = devices[0].rear;
     s.dist_side_front_right = devices[1].front;
     s.dist_side_rear_right = devices[1].rear;
+    s.left_wall = devices[0].wall;
+    s.right_wall = devices[1].wall;
     s.publish_timestamp_us = micros();
     xQueueOverwrite(side_queue, &s);
   }
@@ -110,12 +113,20 @@ struct SideOwner {
     Wire1.begin(pin::sda_side, pin::scl_side, 400000);
     Wire1.setTimeOut(settings.bus_timeout_ms);
   }
+  static uint8_t shutdown_pin(unsigned i) {
+    return i ? pin::xshut_side_right : pin::xshut_side_left;
+  }
+  static void hold_shutdown(unsigned i) {
+    uint8_t gpio = shutdown_pin(i);
+    digitalWrite(gpio, LOW);
+    pinMode(gpio, OUTPUT);
+  }
   void begin() {
     bus_backoff.configure(settings);
     for (auto &d : devices)
       d.backoff.configure(settings);
-    pinMode(pin::xshut_side_right, OUTPUT);
-    digitalWrite(pin::xshut_side_right, LOW);
+    hold_shutdown(0);
+    hold_shutdown(1);
     Wire1.begin(pin::sda_side, pin::scl_side, 400000);
     Wire1.setTimeOut(settings.bus_timeout_ms);
   }
@@ -126,13 +137,11 @@ struct SideOwner {
     d.active = false;
     uint8_t address =
         i ? config::vl53l5cx_addr_right : config::vl53l5cx_addr_left;
-    if (i) {
-      pinMode(pin::xshut_side_right, OUTPUT);
-      digitalWrite(pin::xshut_side_right, LOW);
-      vTaskDelay(pdMS_TO_TICKS(10));
-      pinMode(pin::xshut_side_right, INPUT);
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
+    hold_shutdown(i);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    // Release LPn to the board's pull-up rather than driving its supply high.
+    pinMode(shutdown_pin(i), INPUT);
+    vTaskDelay(pdMS_TO_TICKS(10));
     // LPn may retain the address; adopt an existing address before default.
     uint8_t found = probe(address) ? address : 0x29;
     d.driver.VL53L5CX_i2c->clear_error();
@@ -150,6 +159,7 @@ struct SideOwner {
       health(d, SensorHealth::INITIALIZING);
     } else {
       fail(d, SensorError::INIT_FAILED);
+      hold_shutdown(i); // A failed address assignment must not leave 0x29 live.
       health(d, SensorHealth::OFFLINE);
     }
     publish();
@@ -191,6 +201,7 @@ struct SideOwner {
         auto estimate = process_vl53l5cx(
             d.result, i ? config::side_right_flip_x : config::side_left_flip_x,
             i ? config::side_right_flip_y : config::side_left_flip_y, i == 0);
+        d.wall = estimate;
         if (estimate.valid) {
           d.front.distance_mm =
               constrain(estimate.front_dist_mm, config::sensor_min_raw,
@@ -214,6 +225,7 @@ struct SideOwner {
       if (d.pending) {
         d.active = false;
         d.grace_us = 0;
+        hold_shutdown(i);
         d.backoff.defer(millis());
         health(d, SensorHealth::OFFLINE);
         publish();
@@ -254,8 +266,8 @@ struct SideOwner {
         d.active = false;
       }
       publish();
-      pinMode(pin::xshut_side_right, OUTPUT);
-      digitalWrite(pin::xshut_side_right, LOW);
+      hold_shutdown(0);
+      hold_shutdown(1);
       vTaskDelay(pdMS_TO_TICKS(10));
       restart_bus();
       init_device(0);
@@ -311,15 +323,15 @@ namespace sensors {
 bool init() {
   static_assert(std::is_trivially_copyable<MainSensorSnapshot>::value,
                 "snapshot must copy");
-  static_assert(std::is_trivially_copyable<SideSensorSnapshot>::value,
+  static_assert(std::is_trivially_copyable<RosepinkSideSnapshot>::value,
                 "snapshot must copy");
   main_queue = xQueueCreate(1, sizeof(MainSensorSnapshot));
-  side_queue = xQueueCreate(1, sizeof(SideSensorSnapshot));
+  side_queue = xQueueCreate(1, sizeof(RosepinkSideSnapshot));
   command_queue = xQueueCreate(4, sizeof(SensorCommand));
   if (!main_queue || !side_queue || !command_queue)
     return false;
   MainSensorSnapshot main;
-  SideSensorSnapshot side;
+  RosepinkSideSnapshot side;
   xQueueOverwrite(main_queue, &main);
   xQueueOverwrite(side_queue, &side);
   if (xTaskCreatePinnedToCore(
@@ -335,7 +347,7 @@ bool init() {
 bool get_main_snapshot(MainSensorSnapshot &out) {
   return main_queue && xQueuePeek(main_queue, &out, 0) == pdTRUE;
 }
-bool get_side_snapshot(SideSensorSnapshot &out) {
+bool get_side_snapshot(RosepinkSideSnapshot &out) {
   return side_queue && xQueuePeek(side_queue, &out, 0) == pdTRUE;
 }
 bool send_command(const SensorCommand &cmd) {

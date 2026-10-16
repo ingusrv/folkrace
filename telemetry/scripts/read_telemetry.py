@@ -311,6 +311,61 @@ def parse_args():
     return parser.parse_args()
 
 
+def format_console_line(data):
+    """Keep robot summaries aligned and separate labels from their values."""
+    robot_name = data["robot"]
+    color = ROBOT_COLORS.get(robot_name, "\033[97m")
+    direction = "CW" if data.get("flags", 0) & 4 else "CCW"
+
+    def number(key, width=6, precision=2):
+        value = data.get(key)
+        if not isinstance(value, (int, float)) or not math.isfinite(value):
+            return f"{'?':>{width}}"
+        text = f"{value:.{precision}f}"
+        if text.startswith("-") and float(text) == 0:
+            text = text[1:]
+        return f"{text:>{width}}"
+
+    def distance(key):
+        value = data.get(key)
+        return f"{value if value is not None else '?':>4}"
+
+    summary = (
+        f"[{color}{robot_name:<12}{COLOR_RESET}] "
+        f"[{data['time']:>7} ms] "
+        f"Dir: {direction:<3} "
+        f"State: {data['state']:<18} "
+        f"Bat: {number('battery_voltage_v', 5)} V "
+        f"Dist: (F: {distance('dist_front')}, "
+        f"R: {distance('dist_right')}, L: {distance('dist_left')}) "
+        f"Side: (FL: {distance('dist_side_fl')}, "
+        f"RL: {distance('dist_side_rl')}, "
+        f"FR: {distance('dist_side_fr')}, RR: {distance('dist_side_rr')}) "
+        f"Steer: {number('current_steering')} "
+        f"Throt: {number('current_throttle')} "
+        f"PID err: {number('pid_error', 7, 4)} "
+        f"Drops: {data['receiver_queue_drops']} "
+        f"Gaps: {data['receiver_sequence_gaps']} "
+        f"Decode errors: {data['serial_decode_errors']}"
+    )
+    sensors = []
+    for item in data["sensors"]:
+        age = item['age_ms']
+        text = (f"{item['slot']}: {item['health_name']} "
+                f"age: {age if age is not None else '?'} ms "
+                f"err: {item['last_error_name']}/{item['error_count']}")
+        if "raw_age_ms" in item:
+            if item["raw_age_ms"] is None:
+                text += " raw: none"
+            else:
+                text += (f" raw: {item['raw_range_mm']} mm / "
+                         f"0x{item['raw_status']:02x} "
+                         f"(code: {item['raw_internal_status']}, "
+                         f"age: {item['raw_age_ms']} ms)")
+        sensors.append(text)
+    return " | ".join([summary, *sensors])
+
+
 def main():
     args = parse_args()
     port = args.port_opt or args.port_pos or "/dev/ttyUSB0"
@@ -370,28 +425,7 @@ def main():
                             pass
                     if not args.quiet and host_timestamp - last_console.get(robot_name, -1) >= 0.2:
                         last_console[robot_name] = host_timestamp
-                        color = ROBOT_COLORS.get(robot_name, "\033[97m")
-                        sensors = []
-                        for item in data["sensors"]:
-                            text = f"{item['slot']}={item['health_name']} age={item['age_ms']}"
-                            text += f" err={item['last_error_name']}/{item['error_count']}"
-                            if "raw_age_ms" in item:
-                                text += (" raw=none" if item["raw_age_ms"] is None else
-                                         f" raw={item['raw_range_mm']}/{item['raw_status']:02x}"
-                                         f"(code={item['raw_internal_status']},age={item['raw_age_ms']})")
-                            sensors.append(text)
-                        battery = data["battery_voltage_v"]
-                        battery_text = f"{battery:.2f}V" if battery is not None else "?V"
-                        throt = data["current_throttle"]
-                        throt_str = f"{throt:.2f}" if isinstance(throt, (int, float)) and math.isfinite(throt) else str(throt)
-                        if throt_str == "-0.00":
-                            throt_str = "0.00"
-                        print(f"[{color}{robot_name}{COLOR_RESET}] {data['time']}ms Bat:{battery_text} "
-                              f"{data['state']} F={data['dist_front']} "
-                              f"throttle={throt_str} "
-                              f"drops={data['receiver_queue_drops']} "
-                              f"gaps={data['receiver_sequence_gaps']} "
-                              f"decode_errors={data['serial_decode_errors']} " + " | ".join(sensors))
+                        print(format_console_line(data))
             except (serial.SerialException, OSError) as error:
                 print(f"Serial connection lost: {error}; retrying...", file=sys.stderr)
                 if ser:

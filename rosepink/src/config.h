@@ -7,13 +7,13 @@ namespace config {
 constexpr uint8_t battery_cells = 2;
 static_assert(battery_cells == 2 || battery_cells == 3,
               "Select a 2S or 3S LiPo pack");
-constexpr uint16_t battery_cutoff_per_cell_mv = 3400; // mV per cell
+constexpr uint16_t battery_cutoff_per_cell_mv = 3450; // mV per cell
 constexpr uint32_t battery_cutoff_mv =
     battery_cells * battery_cutoff_per_cell_mv;
 // 10k from battery to GPIO, 2.2k to ground, 0.1uF across the 2.2k.
 constexpr float battery_divider_ratio = (10000.0f + 2200.0f) / 2200.0f;
 constexpr uint32_t battery_sample_interval_ms = 50;
-constexpr uint32_t battery_cutoff_confirm_ms = 1000;
+constexpr uint32_t battery_cutoff_confirm_ms = 500;
 constexpr uint32_t battery_low_blink_interval_ms = 500; // Each on/off phase
 
 // Sensor freshness limits
@@ -30,7 +30,7 @@ constexpr uint32_t tof_timeout_ms = 100;
 constexpr uint32_t tof_resume_grace_us = 100000;      // No-result recovery only
 constexpr uint8_t imu_max_init_attempts_per_boot = 3; // Includes startup
 
-// IMU OFFLINE indication (also add to Rosepink's config)
+// IMU OFFLINE indication
 constexpr uint8_t imu_offline_led_r = 128;
 constexpr uint8_t imu_offline_led_g = 32;
 constexpr uint8_t imu_offline_led_b = 64;
@@ -56,9 +56,34 @@ constexpr uint8_t servo_deg_right = 130;
 constexpr uint8_t servo_deg_left = 50;
 
 constexpr uint16_t start_delay_ms = 5000;
-constexpr uint16_t reverse_duration_ms = 400;
-constexpr uint16_t reverse_turn_duration_ms = 600;
-constexpr uint16_t reverse_trigger_delay_ms = 400;
+// ms: maximum straight backup after the reverse command begins.
+constexpr uint16_t reverse_duration_ms = 200;
+constexpr uint16_t reverse_min_duration_ms = 100;  // ms: before clearance exit
+constexpr uint16_t reverse_turn_duration_ms = 250; // ms: turn time, maximum
+constexpr uint16_t reverse_total_timeout_ms = 900; // ms: includes throttle ramp
+// ms: confirm a close obstacle while forward throttle ramps toward zero.
+constexpr uint16_t reverse_trigger_delay_ms = 60;
+// Stall detection while commanding forward drive.
+constexpr uint32_t stall_timeout_ms = 2000;       // ms: no significant movement
+constexpr uint16_t stall_distance_change_mm = 30; // mm: half-window mean change
+constexpr float stall_rotation_change_deg = 15.0f; // deg: mean yaw change
+constexpr uint8_t stall_min_valid_percent = 80; // %: real returns in each half
+constexpr float stall_min_throttle = 0.03f;     // normalized forward command
+// Escalate repeated short reverses into a timed rocking maneuver.
+constexpr uint8_t escape_reverse_attempts = 5;
+constexpr uint32_t escape_clear_forward_ms = 500; // ms: clear attempt history
+constexpr uint32_t escape_backup_ms = 700;       // ms: straight reverse command
+constexpr uint32_t escape_reverse_turn_ms = 650; // ms: reverse at full lock
+constexpr uint32_t escape_forward_ms = 600;  // ms: forward rock at full lock
+constexpr uint32_t escape_timeout_ms = 4000; // ms: includes throttle ramps
+constexpr float reverse_max_yaw_deg = 30.0f; // deg: total recovery rotation
+constexpr float reverse_motion_throttle = 0.03f; // commanded reverse magnitude
+constexpr uint16_t reverse_clearance_margin_mm = 100;
+constexpr uint16_t avoidance_direction_margin_mm = 60; // ignore gap noise
+constexpr uint16_t avoidance_max_ms = 180; // ms: one front-avoidance pulse
+constexpr float avoidance_max_yaw_deg =
+    18.0f; // deg: hand back to wall following
+constexpr uint16_t avoidance_release_margin_mm = 50; // mm: rearm hysteresis
 
 constexpr uint16_t sensor_min_raw = 30;
 constexpr uint16_t sensor_max_raw = 1000;
@@ -67,7 +92,7 @@ constexpr float sensor_range =
 
 // Cornering and obstacle navigation parameters
 constexpr uint16_t front_turn_dist =
-    500; // mm: distance to start corner turn assist
+    550; // mm: distance to start corner turn assist
 constexpr uint16_t front_critical_dist =
     180; // mm: distance where front demands full-lock turn
 constexpr uint16_t side_danger_dist = 160; // mm: emergency side wall repulsion
@@ -94,6 +119,10 @@ constexpr uint8_t vl53l5cx_addr_left = 0x30;
 constexpr uint8_t vl53l5cx_addr_right = 0x31;
 constexpr uint8_t vl53l5cx_frequency_hz = 50;
 constexpr float side_sensor_baseline_mm = 110.0f;
+// mm: column consensus tolerance, including range noise on a flat wall.
+constexpr float side_fit_tolerance_mm = 35.0f;
+constexpr float side_heading_full_scale_rad = 0.45f; // rad: full correction
+constexpr float side_heading_weight = 0.65f;
 
 // Matrix orientation flips (accommodates physical PCB mounting)
 constexpr bool side_left_flip_x = true;
@@ -107,6 +136,7 @@ constexpr uint8_t battery_adc = 15;
 constexpr uint8_t esc = 2;
 constexpr uint8_t servo = 1;
 
+constexpr uint8_t xshut_front = 16;
 constexpr uint8_t xshut_left = 42;
 constexpr uint8_t xshut_right = 41;
 
@@ -116,8 +146,8 @@ constexpr uint8_t scl = 5;
 constexpr uint8_t sda_side = 6;
 constexpr uint8_t scl_side = 7;
 
-// Side sensors on Wire1: front-left has NO XSHUT pin (always active),
-// front-right has XSHUT at pin 40.
+// VL53L5CX side sensors on Wire1.
+constexpr uint8_t xshut_side_left = 17;
 constexpr uint8_t xshut_side_right = 40;
 
 constexpr uint8_t direction_switch = 21;
