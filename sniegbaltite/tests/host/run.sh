@@ -11,9 +11,9 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   -o "$build_dir/policy_test"
 "$build_dir/policy_test"
 c++ -std=c++17 -Wall -Wextra -Werror \
-  -I"$shared_dir/vendor/VL53L0X" -I"$host_tests/fakes" -I"$shared_dir/src" \
+  -I"$host_tests/fakes" -I"$shared_dir/src" \
   "$host_tests/transport_test.cpp" "$shared_dir/src/driver/bmi088_checked.cpp" \
-  "$shared_dir/vendor/VL53L0X/VL53L0X.cpp" -o "$build_dir/transport_test"
+  -o "$build_dir/transport_test"
 "$build_dir/transport_test"
 c++ -std=c++17 -Wall -Wextra -Werror -fsyntax-only \
   -I"$host_tests/fakes" -I"$shared_dir/src" "$host_tests/layout_test.cpp"

@@ -81,7 +81,7 @@ enum class SensorHealth : uint8_t {
   OFFLINE,       // Unavailable: recovery backoff or IMU disabled until reboot
   RECOVERING,    // Bus reset or XSHUT sequencing in progress
   RANGE_INVALID, // Device returned a result, but distance is unreliable
-  NO_RETURN,     // Opt-in racing fallback: fresh sentinel, assumed max range
+  OUT_OF_RANGE,  // Fresh ToF result at/beyond configured maximum distance
 };
 
 inline const char *sensor_health_to_str(SensorHealth h) {
@@ -102,8 +102,8 @@ inline const char *sensor_health_to_str(SensorHealth h) {
     return "RECOVER";
   case SensorHealth::RANGE_INVALID:
     return "RANGE_INVALID";
-  case SensorHealth::NO_RETURN:
-    return "NO_RETURN";
+  case SensorHealth::OUT_OF_RANGE:
+    return "OUT_OF_RANGE";
   default:
     return "UNKNOWN";
   }
@@ -135,7 +135,7 @@ enum class SensorSlot : uint8_t {
 
 struct SensorStatus {
   uint32_t timestamp_us =
-      0; // Last usable sample (measured or NO_RETURN fallback)
+      0; // Last usable sample (measured or out of range)
   SensorHealth health = SensorHealth::INITIALIZING;
   uint32_t error_count = 0;
   uint16_t consecutive_errors = 0;
@@ -143,10 +143,11 @@ struct SensorStatus {
 };
 
 struct SensorData : SensorStatus {
+  SensorData() { health = SensorHealth::RECOVERING; }
   uint16_t distance_mm = 0;
   uint16_t raw_range_mm = 0; // Unclamped VL53L0X result, including sentinels
   uint8_t raw_status = 0;    // Full RESULT_RANGE_STATUS register
-  uint32_t raw_timestamp_us = 0; // Zero until a complete checked result
+  uint32_t raw_timestamp_us = 0; // Zero until the first consumed result
 };
 
 struct IMUSensorData : SensorStatus {
@@ -162,7 +163,7 @@ inline bool is_sensor_fresh(uint32_t timestamp_us, uint32_t now_us,
 inline bool is_sensor_available(const SensorData &s, uint32_t now_us,
                                 uint32_t max_age_us) {
   return (s.health == SensorHealth::OK ||
-          s.health == SensorHealth::NO_RETURN) &&
+          s.health == SensorHealth::OUT_OF_RANGE) &&
          is_sensor_fresh(s.timestamp_us, now_us, max_age_us);
 }
 

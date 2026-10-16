@@ -75,7 +75,7 @@ static void vibration_and_outliers() {
     for (unsigned i = 0; i < 7; ++i)
       sensor_policy::success(*sensor_policy::distances(s, i), t);
     s.dist_side_front_right.health =
-        alternate ? SensorHealth::NO_RETURN : SensorHealth::OK;
+        alternate ? SensorHealth::OUT_OF_RANGE : SensorHealth::OK;
     sensor_policy::success(s.imu, t);
     assert(detector.update(s, true, 1) == (t == 2001000));
   }
@@ -98,7 +98,7 @@ static void optional_sensor_changes_and_blind_ranges() {
         auto &beam = *sensor_policy::distances(s, i);
         sensor_policy::success(beam, t);
         if (blind) {
-          beam.health = SensorHealth::NO_RETURN;
+          beam.health = SensorHealth::OUT_OF_RANGE;
           beam.distance_mm = 1000;
         }
       }

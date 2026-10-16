@@ -17,7 +17,6 @@ struct Settings {
   uint32_t bus_timeout_ms = 25;
   uint16_t tof_timeout_ms = 100;
   uint32_t tof_resume_grace_us = 100000;
-  bool allow_no_return = false; // Explicit per-robot racing assumption.
 };
 inline void fail(SensorStatus &s, SensorError error) {
   s.health = SensorHealth::READ_ERROR;
@@ -33,7 +32,7 @@ inline void success(SensorStatus &s, uint32_t now) {
   s.consecutive_errors = 0;
 }
 inline void expire(SensorStatus &s, uint32_t now, uint32_t age) {
-  if ((s.health == SensorHealth::OK || s.health == SensorHealth::NO_RETURN) &&
+  if ((s.health == SensorHealth::OK || s.health == SensorHealth::OUT_OF_RANGE) &&
       !is_sensor_fresh(s.timestamp_us, now, age))
     s.health = SensorHealth::STALE;
 }
@@ -46,6 +45,12 @@ inline SensorData *distances(RobotState &s, unsigned i) {
 }
 inline const SensorData *distances(const RobotState &s, unsigned i) {
   return distances(const_cast<RobotState &>(s), i);
+}
+inline void expire(SensorData &s, uint32_t now, uint32_t age) {
+  if ((s.health == SensorHealth::OK ||
+       s.health == SensorHealth::OUT_OF_RANGE) &&
+      !is_sensor_fresh(s.timestamp_us, now, age))
+    s.health = SensorHealth::READ_ERROR;
 }
 inline void expire_all(RobotState &s, uint32_t now) {
   for (unsigned i = 0; i < 7; ++i)

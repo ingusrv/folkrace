@@ -31,7 +31,7 @@ void cadence(TickType_t &wake) {
 }
 void main_sensor_task(void *) {
   sensor_policy::MainSensorOwner owner(
-      Wire, pin::sda, pin::scl, pin::xshut_left, pin::xshut_right,
+      Wire, pin::sda, pin::scl, -1, pin::xshut_left, pin::xshut_right,
       config::sensor_min_raw, config::sensor_max_raw,
       config::tof_timing_budget_us, main_queue, command_queue,
       config::imu_min_calib_samples, config::imu_max_init_attempts_per_boot,

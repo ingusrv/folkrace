@@ -10,8 +10,9 @@
 namespace sensor_policy {
 class MainSensorOwner {
 public:
-  MainSensorOwner(TwoWire &bus, int sda, int scl, int left_xshut,
-                  int right_xshut, uint16_t minimum, uint16_t maximum,
+  MainSensorOwner(TwoWire &bus, int sda, int scl, int front_xshut,
+                  int left_xshut, int right_xshut, uint16_t minimum,
+                  uint16_t maximum,
                   uint32_t budget, QueueHandle_t snapshots,
                   QueueHandle_t commands, uint16_t min_samples = 50,
                   uint8_t max_attempts = 3, const Settings &settings = {})
@@ -22,6 +23,7 @@ public:
     m_backoff.configure(settings);
     tof.count = 3;
     tof.devices[0].address = 0x30;
+    tof.devices[0].xshut = front_xshut;
     tof.devices[1].address = 0x31;
     tof.devices[1].xshut = right_xshut;
     tof.devices[2].address = 0x32;
@@ -41,10 +43,6 @@ public:
     process_commands();
     if (m_active && !m_disabled)
       acquire();
-    tof.set_peer_healthy(
-        m_disabled ||
-        (m_active && is_imu_available(snapshot.imu, micros(),
-                                      m_settings.imu_freshness_us)));
     tof.poll();
     publish();
     process_commands();
@@ -106,7 +104,6 @@ private:
     }
     snapshot.imu.health = SensorHealth::RECOVERING;
     publish();
-    tof.pause_begin();
     ++m_attempts; // Lifetime budget, including successful calls and bus
                   // recovery.
     uint32_t start = micros();

@@ -12,63 +12,38 @@ inline SensorError wire_error(uint8_t rc) {
          : (rc == 2 || rc == 3) ? SensorError::NACK
                                 : SensorError::BUS_ERROR;
 }
-// Hardware faults and range quality are deliberately separate. See fork
-// provenance.
-inline bool accept_range(SensorData &out, uint16_t raw, uint8_t status,
-                         uint32_t now, uint16_t minimum, uint16_t maximum,
-                         bool allow_no_return = false) {
+
+/** Accept a completed result, including maximum-range/sentinel returns.
+ * Range status is diagnostic only; recovery depends on communication/cadence.
+ */
+inline void accept_range(SensorData &out, uint16_t raw, uint8_t status,
+                         uint32_t now, uint16_t minimum, uint16_t maximum) {
   out.raw_range_mm = raw;
   out.raw_status = status;
   out.raw_timestamp_us = now;
-  uint8_t code = (status & 0x78) >> 3;
-  if (code >= 1 && code <= 3) {
-    fail(out, SensorError::HARDWARE_ERROR);
-    return false;
-  }
-  out.consecutive_errors = 0;
-  // Observed on Sniegbaltite in open space: status 4/6 sentinel returns,
-  // plus status 9 / 8190 in the 2026-10-14_10-05-53 run. These prove a live
-  // result stream, not clear space. Permit only these sentinel classes under
-  // the explicit racing policy, preserving NO_RETURN rather than claiming a
-  // valid measurement. Non-sentinel status-9 results remain unavailable.
-  bool no_return = ((code == 4 || code == 6) &&
-                    (raw == 8190 || raw == 8191)) ||
-                   (code == 9 && raw == 8190);
-  if (allow_no_return && no_return) {
-    out.distance_mm = maximum;
-    out.timestamp_us = now;
-    out.health = SensorHealth::NO_RETURN;
-  } else if (code != 11 || raw >= 8190) {
-    out.health = SensorHealth::RANGE_INVALID;
-  } else {
-    out.distance_mm = std::max(minimum, std::min(maximum, raw));
-    success(out, now);
-  }
-  return true; // Complete non-hardware result, even if quality is unreliable.
+  out.distance_mm = std::max(minimum, std::min(maximum, raw));
+  success(out, now);
+  if (raw >= maximum)
+    out.health = SensorHealth::OUT_OF_RANGE;
 }
+
 struct ToFDevice {
   VL53L0X driver;
   SensorData data;
   int8_t xshut = -1;
   uint8_t address = 0x30;
-  bool active = false, pending = true;
-  uint32_t result_us = 0, grace_start_us = 0;
-  bool grace_eligible = false;
-  Backoff backoff;
+  // ERROR waits for retry; RECOVERING polls for the first fresh result.
+  uint32_t retry_at_ms = 0, result_us = 0, grace_start_us = 0;
 };
 
-// One instance belongs exclusively to one task (or a stopped C3 control loop).
+// One task owns each bus. C3 callers stop motors before blocking recovery.
 class ToFBus {
 public:
   using Publish = void (*)(void *);
   ToFBus(TwoWire &bus, int sda, int scl, uint16_t minimum, uint16_t maximum,
          uint32_t budget = 20000, const Settings &settings = {})
       : m_bus(bus), m_sda(sda), m_scl(scl), m_min(minimum), m_max(maximum),
-        m_budget(budget), m_settings(settings) {
-    m_bus_backoff.configure(settings);
-    for (auto &device : devices)
-      device.backoff.configure(settings);
-  }
+        m_budget(budget), m_settings(settings) {}
   ToFDevice devices[4];
   unsigned count = 0;
   void set_publisher(Publish publish, void *context) {
@@ -80,30 +55,30 @@ public:
     m_bus.setTimeOut(m_settings.bus_timeout_ms);
     hold_group();
     m_group_pending = true;
-  }
-  void publish() {
-    if (m_publish)
-      m_publish(m_context);
+    for (unsigned i = 0; i < count; ++i)
+      devices[i].data.health = SensorHealth::RECOVERING;
   }
   bool pending() const {
     if (m_group_pending)
       return true;
     for (unsigned i = 0; i < count; ++i)
-      if (devices[i].pending)
+      if (devices[i].data.health == SensorHealth::READ_ERROR)
         return true;
     return false;
   }
-  /** Whether a recovery attempt is due now; backoff alone does not stop a C3.
-   */
   bool recovery_due() const {
     if (grace_active())
       return false;
     if (m_group_pending)
-      return m_bus_backoff.due(millis());
+      return due(m_group_retry_ms);
     for (unsigned i = 0; i < count; ++i)
-      if (devices[i].pending && devices[i].backoff.due(millis()))
+      if (devices[i].data.health == SensorHealth::READ_ERROR &&
+          due(devices[i].retry_at_ms))
         return true;
     return false;
+  }
+  bool bus_restart_due() const {
+    return m_group_pending && m_reset_bus && due(m_group_retry_ms);
   }
   bool grace_active() const {
     for (unsigned i = 0; i < count; ++i)
@@ -111,184 +86,141 @@ public:
         return true;
     return false;
   }
-  // Called around known blocking work, never around an ordinary scheduling
-  // overrun.
-  void pause_begin() {
-    uint32_t now = micros();
-    m_bus_backoff.fault();
-    for (unsigned i = 0; i < count; ++i) {
-      auto &d = devices[i];
-      d.grace_eligible = d.active && !d.pending && !d.grace_start_us &&
-                         now - d.result_us <= m_settings.tof_freshness_us;
-      d.backoff.fault();
-    }
-  }
+  // Known owner pauses (IMU/device initialization) allow one bounded window
+  // to receive a new result. Published sample timestamps never get extended.
   void pause_end() {
-    uint32_t now = micros();
     for (unsigned i = 0; i < count; ++i) {
       auto &d = devices[i];
-      if (d.grace_eligible && d.active && !d.pending)
-        d.grace_start_us = now;
-      d.grace_eligible = false;
+      if (d.data.health != SensorHealth::READ_ERROR)
+        d.grace_start_us = micros();
     }
   }
   void poll() {
-    unsigned faults = 0;
-    bool all_healthy = m_peer_healthy;
+    if (digitalRead(m_sda) == LOW || digitalRead(m_scl) == LOW) {
+      m_reset_bus = true;
+      schedule_group();
+    }
+    if (m_group_pending)
+      return;
     for (unsigned i = 0; i < count; ++i) {
       auto &d = devices[i];
-      if (!d.active || d.pending) {
-        all_healthy = false;
+      if (d.data.health == SensorHealth::READ_ERROR)
         continue;
-      }
-      d.driver.clear_error();
-      uint8_t ready = d.driver.readReg(VL53L0X::RESULT_INTERRUPT_STATUS);
-      bool complete = false;
-      bool failed_acquisition = false;
-      if (!d.driver.first_error() && (ready & 7)) {
-        uint8_t result[12] = {};
-        d.driver.read_checked(VL53L0X::RESULT_RANGE_STATUS, result, 12);
-        d.driver.writeReg(VL53L0X::SYSTEM_INTERRUPT_CLEAR, 1);
-        if (!d.driver.first_error()) {
-          uint32_t now = micros();
-          if (now - d.result_us > m_settings.tof_freshness_us) {
-            d.backoff.fault();
-            m_bus_backoff.fault();
-          }
-          complete = true;
-          d.result_us = now;
-          d.grace_start_us = 0;
-          bool healthy = accept_range(
-              d.data, (uint16_t(result[10]) << 8) | result[11], result[0], now,
-              m_min, m_max, m_settings.allow_no_return);
-          if (healthy)
-            d.backoff.acquired(now);
-          else {
-            d.backoff.fault();
-            failed_acquisition = true;
-          }
-          if (d.data.health != SensorHealth::OK)
-            publish();
-        }
-      }
-      if (d.driver.first_error()) {
-        failed_acquisition = true;
-        d.grace_start_us = 0;
-        d.backoff.fault();
-        fail(d.data, wire_error(d.driver.first_error()));
-        publish();
-      } else if (!complete) {
-        uint32_t now = micros();
-        bool timeout =
-            d.grace_start_us
-                ? now - d.grace_start_us >= m_settings.tof_resume_grace_us
-                : now - d.result_us >= m_settings.tof_freshness_us;
-        if (timeout) {
-          fail(d.data, SensorError::MEASUREMENT_TIMEOUT);
-          d.grace_start_us = 0;
-          d.backoff.fault();
-          d.pending = true;
-          publish();
-        }
-      }
-      if (failed_acquisition &&
-          d.data.consecutive_errors >= m_settings.max_consecutive_errors)
-        d.pending = true;
-      if (d.data.health == SensorHealth::READ_ERROR) {
-        ++faults;
-        all_healthy = false;
-      }
-      if (micros() - d.result_us > m_settings.tof_freshness_us)
-        all_healthy = false;
-      if (d.pending) {
-        d.active = false;
-        d.backoff.defer(millis());
-        d.data.health = SensorHealth::OFFLINE;
-        publish();
-        if (d.xshut < 0 && !m_group_pending) {
-          m_group_pending = true;
-          m_bus_backoff.defer(millis());
-        }
-      }
-    }
-    if (all_healthy)
-      m_bus_backoff.acquired(micros());
-    else
-      m_bus_backoff.fault();
-    if (faults >= 2 || digitalRead(m_sda) == LOW || digitalRead(m_scl) == LOW) {
-      if (!m_group_pending)
-        m_bus_backoff.defer(millis());
-      m_group_pending = true;
-      m_reset_bus = true;
-      mark_group(SensorHealth::RECOVERING);
+      poll_device(d);
     }
   }
-  void set_peer_healthy(bool healthy) { m_peer_healthy = healthy; }
-  bool bus_restart_due() const {
-    return m_group_pending && m_reset_bus && m_bus_backoff.due(millis());
-  }
-  // One bounded device or group attempt, yielding between group members.
-  // C3 callers MUST have written zero motor outputs before calling this method.
+  /** Attempt one sensor or isolated group; caller may block during init.
+   * @return Whether an attempt ran (not whether it succeeded).
+   */
   bool recover() {
-    if (grace_active())
+    if (!recovery_due())
       return false;
     if (m_group_pending) {
-      if (!m_bus_backoff.due(millis()))
-        return false;
       mark_group(SensorHealth::RECOVERING);
-      pause_begin();
       hold_group();
       delay(10);
       if (m_reset_bus) {
         restart_bus();
         m_reset_bus = false;
       }
+      bool primary_failed = false;
       for (unsigned i = 0; i < count; ++i) {
-        bool initialized = initialize(devices[i]);
+        bool ok = initialize(devices[i]);
         publish();
         vTaskDelay(1);
-        // An always-powered device may still answer at 0x29 after a failed
-        // address write. Keep remaining XSHUT devices isolated until it
-        // recovers.
-        if (!initialized && devices[i].xshut < 0)
+        // The always-powered sensor can remain at 0x29. Do not release
+        // another sensor at that address until it has been reassigned.
+        if (!ok && devices[i].xshut < 0) {
+          primary_failed = true;
           break;
+        }
       }
-      m_group_pending = false;
-      for (unsigned i = 0; i < count; ++i)
-        if (devices[i].pending && devices[i].xshut < 0)
-          m_group_pending = true;
-      if (m_group_pending)
-        m_bus_backoff.defer(millis());
-      pause_end();
+      m_group_pending = primary_failed;
+      if (primary_failed) {
+        mark_group(SensorHealth::READ_ERROR);
+        m_group_retry_ms = millis() + m_settings.recovery_initial_ms;
+      } else {
+        pause_end();
+      }
+      publish();
       return true;
     }
     for (unsigned i = 0; i < count; ++i) {
       auto &d = devices[i];
-      if (!d.pending || !d.backoff.due(millis()))
+      if (d.data.health != SensorHealth::READ_ERROR || !due(d.retry_at_ms))
         continue;
       d.data.health = SensorHealth::RECOVERING;
       publish();
-      pause_begin();
       pinMode(d.xshut, OUTPUT);
       digitalWrite(d.xshut, LOW);
       delay(10);
       initialize(d);
-      publish();
       pause_end();
+      publish();
       return true;
     }
     return false;
   }
 
 private:
+  bool due(uint32_t deadline_ms) const {
+    return static_cast<int32_t>(millis() - deadline_ms) >= 0;
+  }
+  void publish() {
+    if (m_publish)
+      m_publish(m_context);
+  }
+  void poll_device(ToFDevice &d) {
+    uint8_t ready = d.driver.readReg(VL53L0X::RESULT_INTERRUPT_STATUS);
+    if (d.driver.last_status) {
+      fault(d, wire_error(d.driver.last_status));
+      return;
+    }
+    if (ready & 7) {
+      uint8_t result[12] = {};
+      d.driver.readMulti(VL53L0X::RESULT_RANGE_STATUS, result, sizeof(result));
+      if (d.driver.last_status) {
+        fault(d, wire_error(d.driver.last_status));
+        return;
+      }
+      d.driver.writeReg(VL53L0X::SYSTEM_INTERRUPT_CLEAR, 1);
+      if (d.driver.last_status) {
+        fault(d, wire_error(d.driver.last_status));
+        return;
+      }
+      d.result_us = micros();
+      d.grace_start_us = 0;
+      accept_range(d.data,
+                   (static_cast<uint16_t>(result[10]) << 8) | result[11],
+                   result[0], d.result_us, m_min, m_max);
+    } else {
+      uint32_t start = d.grace_start_us ? d.grace_start_us : d.result_us;
+      uint32_t timeout = d.grace_start_us ? m_settings.tof_resume_grace_us
+                                          : m_settings.tof_freshness_us;
+      if (micros() - start >= timeout)
+        fault(d, SensorError::MEASUREMENT_TIMEOUT);
+    }
+  }
+  void fault(ToFDevice &d, SensorError error) {
+    fail(d.data, error);
+    d.grace_start_us = 0;
+    d.retry_at_ms = millis() + m_settings.recovery_initial_ms;
+    publish();
+    if (d.xshut < 0)
+      schedule_group();
+  }
   void mark_group(SensorHealth health) {
     for (unsigned i = 0; i < count; ++i) {
       devices[i].data.health = health;
-      devices[i].active = false;
-      devices[i].pending = true;
       devices[i].grace_start_us = 0;
     }
     publish();
+  }
+  void schedule_group() {
+    if (!m_group_pending)
+      m_group_retry_ms = millis() + m_settings.recovery_initial_ms;
+    m_group_pending = true;
+    mark_group(SensorHealth::READ_ERROR);
   }
   void hold_group() {
     for (unsigned i = 0; i < count; ++i)
@@ -305,49 +237,36 @@ private:
     d.driver = VL53L0X();
     d.driver.setBus(&m_bus);
     d.driver.setTimeout(m_settings.tof_timeout_ms);
-    m_bus.setTimeOut(m_settings.bus_timeout_ms);
-    d.driver.clear_error();
-    if (d.xshut < 0) {
-      if (probe(d.address))
-        d.driver.set_host_address(d.address);
-      else if (probe(0x29)) {
-        d.driver.set_host_address(0x29);
-        d.driver.setAddress(d.address);
-      } else
-        return init_failed(d, SensorError::INIT_FAILED);
-    } else {
+    if (d.xshut >= 0) {
       pinMode(d.xshut, INPUT);
       delay(10);
       d.driver.setAddress(d.address);
+      if (d.driver.last_status)
+        return init_failed(d, wire_error(d.driver.last_status));
+    } else {
+      // Upstream setAddress also updates the host-side address on NACK.
+      // At MCU reboot this sensor may already be at its assigned address;
+      // verify that address explicitly instead of requiring a write at 0x29.
+      d.driver.setAddress(d.address);
+      if (!probe(d.address))
+        return init_failed(d, SensorError::NACK);
     }
-    if (d.driver.first_error())
-      return init_failed(d, wire_error(d.driver.first_error()));
-    if (!d.driver.init())
-      return init_failed(d, d.driver.first_error()
-                                ? wire_error(d.driver.first_error())
-                                : SensorError::INIT_FAILED);
-    bool configured = d.driver.setMeasurementTimingBudget(m_budget);
+    if (!d.driver.init() || d.driver.last_status)
+      return init_failed(d, SensorError::INIT_FAILED);
+    if (!d.driver.setMeasurementTimingBudget(m_budget) || d.driver.last_status)
+      return init_failed(d, SensorError::CONFIG_FAILED);
     d.driver.startContinuous();
-    if (!configured || d.driver.first_error())
-      return init_failed(d, d.driver.first_error()
-                                ? wire_error(d.driver.first_error())
-                                : SensorError::CONFIG_FAILED);
-    d.active = true;
-    d.pending = false;
+    if (d.driver.last_status)
+      return init_failed(d, wire_error(d.driver.last_status));
     d.result_us = micros();
     d.grace_start_us = 0;
-    d.data.health = SensorHealth::INITIALIZING;
+    d.data.health = SensorHealth::RECOVERING;
     return true;
   }
   bool init_failed(ToFDevice &d, SensorError error) {
     fail(d.data, error);
-    publish();
-    d.active = false;
-    d.pending = true;
-    d.backoff.defer(millis());
-    d.data.health = SensorHealth::OFFLINE;
-    // A failed address/config transaction can leave a released device at 0x29.
-    // Isolate it now so it cannot collide with the next group member.
+    d.retry_at_ms = millis() + m_settings.recovery_initial_ms;
+    d.grace_start_us = 0;
     if (d.xshut >= 0) {
       pinMode(d.xshut, OUTPUT);
       digitalWrite(d.xshut, LOW);
@@ -383,7 +302,7 @@ private:
   Settings m_settings;
   Publish m_publish = nullptr;
   void *m_context = nullptr;
-  bool m_group_pending = true, m_reset_bus = false, m_peer_healthy = true;
-  Backoff m_bus_backoff;
+  bool m_group_pending = true, m_reset_bus = false;
+  uint32_t m_group_retry_ms = 0;
 };
 } // namespace sensor_policy

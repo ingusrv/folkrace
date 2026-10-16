@@ -5,7 +5,7 @@ import zlib
 
 ROBOTS = {1: "sniegbaltite", 2: "rosepink", 3: "banana", 4: "nakts"}
 STATES = ("IDLE", "COUNTDOWN", "RUNNING", "REVERSE", "REVERSE_TURN", "WRONG_WAY_RECOVERY")
-HEALTH = ("ABSENT", "INIT", "OK", "STALE", "ERROR", "OFFLINE", "RECOVER", "RANGE_INVALID", "NO_RETURN")
+HEALTH = ("ABSENT", "INIT", "OK", "STALE", "ERROR", "OFFLINE", "RECOVER", "RANGE_INVALID", "OUT_OF_RANGE")
 ERRORS = ("NONE", "NACK", "TIMEOUT", "SHORT_READ", "BUS_ERROR", "INIT_FAILED", "CONFIG_FAILED", "MEASUREMENT_TIMEOUT", "HARDWARE_ERROR")
 SLOTS = ("front", "right", "left", "side_fl", "side_rl", "side_fr", "side_rr", "imu")
 PACKET_SIZE = 188

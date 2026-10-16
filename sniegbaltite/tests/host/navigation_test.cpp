@@ -42,7 +42,7 @@ static void bounded_avoidance_returns_to_wall_following() {
   assert(avoid.steer(-0.2f) == -0.2f); // A close front cannot renew the pulse.
 
   s.dist_front = distance(1000, 5000);
-  s.dist_front.health = SensorHealth::NO_RETURN;
+  s.dist_front.health = SensorHealth::OUT_OF_RANGE;
   avoid.update(s, 5000, true, 1);
   assert(avoid.steer(-0.5f) ==
          -0.5f); // No timed tail after the pole disappears.
@@ -94,7 +94,7 @@ static void recorded_wall_conflict_and_reverse_direction() {
   s.dist_side_front_left = distance(31, s.current_time_us);
   s.dist_side_rear_left = distance(336, s.current_time_us);
   s.dist_side_front_right = distance(1000, s.current_time_us);
-  s.dist_side_front_right.health = SensorHealth::NO_RETURN;
+  s.dist_side_front_right.health = SensorHealth::OUT_OF_RANGE;
   s.dist_side_rear_right = distance(1000, s.current_time_us);
   avoid.update(s, s.current_time_us, true, 1);
   assert(avoid.steer(-0.98445f) >

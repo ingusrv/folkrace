@@ -20,9 +20,6 @@ constexpr uint32_t battery_low_blink_interval_ms = 500; // Each on/off phase
 constexpr uint32_t sensor_freshness_imu_us = 50000;  // 50 ms max age
 constexpr uint32_t sensor_freshness_tof_us = 100000; // 100 ms max age
 constexpr uint16_t sensor_max_consecutive_errors = 3;
-// Racing policy for checked status-4/6 and status-9/8190 sentinel returns.
-// Weak returns are assumed beyond sensor_max_raw, still reported NO_RETURN.
-constexpr bool tof_allow_no_return = true;
 
 // Recovery timings
 constexpr uint32_t sensor_recovery_delay_initial_ms = 500;
@@ -124,6 +121,7 @@ constexpr uint8_t battery_adc = 15;
 constexpr uint8_t esc = 2;
 constexpr uint8_t servo = 1;
 
+constexpr uint8_t xshut_front = 16;
 constexpr uint8_t xshut_left = 42;
 constexpr uint8_t xshut_right = 41;
 
@@ -134,6 +132,7 @@ constexpr uint8_t sda_side = 6;
 constexpr uint8_t scl_side = 7;
 
 constexpr uint8_t xshut_front_left = 40;
+constexpr uint8_t xshut_rear_left = 17;
 constexpr uint8_t xshut_front_right = 39;
 constexpr uint8_t xshut_rear_right = 38;
 

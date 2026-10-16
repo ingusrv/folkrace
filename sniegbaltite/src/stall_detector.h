@@ -48,7 +48,7 @@ public:
       m_yaw_sum[half] += s.imu.measurement.yaw;
     for (unsigned i = 0; i < 7; ++i) {
       const auto &distance = *sensor_policy::distances(s, i);
-      // NO_RETURN is usable for driving, but its max-range sentinel must not
+      // OUT_OF_RANGE is usable for driving, but its max-range sentinel must not
       // be interpreted as a displacement from the last real return.
       if (distance.health == SensorHealth::OK &&
           sensor_policy::available(distance, s.current_time_us)) {

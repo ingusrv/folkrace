@@ -78,7 +78,7 @@ class DecoderTests(unittest.TestCase):
         # Serial envelope 15 + header 8 + telemetry diagnostics offset 85.
         data, = StreamDecoder().feed(self.record(change=(108, 8)))
         self.assertEqual(data["sensors"][0]["health"], 8)
-        self.assertEqual(data["sensors"][0]["health_name"], "NO_RETURN")
+        self.assertEqual(data["sensors"][0]["health_name"], "OUT_OF_RANGE")
 
     def test_all_split_positions_and_coalescing(self):
         for cut in range(len(self.fixture) + 1):

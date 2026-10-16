@@ -1,5 +1,39 @@
 # Sensor tasks — all-project rollout
 
+## Current VL53L0X implementation (`simplify-tof-recovery`)
+
+This branch replaces the VL53L0X transport fork with upstream Pololu 1.3.1.
+The following supersedes the historical VL53L0X policy described below:
+
+- `OK`: fresh range below the configured maximum, clamped to the minimum.
+- `OUT_OF_RANGE`: fresh range at/above the maximum (including 8190/8191
+  sentinels). Use maximum distance and keep driving. Every completed result
+  refreshes freshness; raw sensor status is retained only for diagnostics.
+- `ERROR`: a detected I2C failure, missing result for 100 ms, or failed
+  initialization. The sensor is unavailable and retries after a fixed 500 ms.
+- `RECOVERING`: reset/init or waiting for the first completed result. The
+  sensor remains unavailable until a result arrives.
+
+Check `last_status` immediately after each runtime library call, along with
+initialization/configuration returns. Accept upstream's limitations: short
+reads and intermediate initialization failures are not comprehensively
+detected. Keep the known-blocking-work resume window without extending any
+published sample timestamp. No recovery is triggered by range-status codes.
+
+Sniegbaltite now requires front XSHUT on GPIO16 and side rear-left XSHUT on
+GPIO17. All seven VL53L0X sensors can therefore be individually reset. Shared
+bus faults still recover the entire bus; other robots retain the isolated
+group path for sensors without XSHUT. IMU and VL53L5CX recovery are unchanged.
+
+Telemetry keeps its existing packet layout/numeric IDs; health 8 is now
+`OUT_OF_RANGE` in firmware and the Python decoder. Other health values remain
+available for the IMU and VL53L5CX; VL53L0X uses only the four states above.
+
+Verification: `sh tests/host/run.sh`, Python telemetry tests, and PlatformIO
+builds for all four robots. Track validation still requires the new wiring.
+
+## Historical `revolution` rollout
+
 Implemented on `revolution` for Sniegbaltite, Rosepink, Nakts, Banana, and the
 telemetry receiver/Python reader. All targets now use the same SensorData and
 telemetry v1 layouts; the temporary FOLKRACE_SENSOR_TASKS switch is removed.

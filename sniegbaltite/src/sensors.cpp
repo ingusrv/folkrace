@@ -14,8 +14,7 @@ constexpr sensor_policy::Settings settings = {
     config::sensor_recovery_healthy_ms,
     config::sensor_bus_timeout_ms,
     config::tof_timeout_ms,
-    config::tof_resume_grace_us,
-    config::tof_allow_no_return};
+    config::tof_resume_grace_us};
 // Control, BLE and telemetry use this same fixed freshness contract.
 static_assert(config::sensor_freshness_tof_us == sensor_policy::tof_age_us);
 static_assert(config::sensor_freshness_imu_us == sensor_policy::imu_age_us);
@@ -31,8 +30,8 @@ void cadence(TickType_t &wake) {
 }
 void main_sensor_task(void *) {
   sensor_policy::MainSensorOwner owner(
-      Wire, pin::sda, pin::scl, pin::xshut_left, pin::xshut_right,
-      config::sensor_min_raw, config::sensor_max_raw,
+      Wire, pin::sda, pin::scl, pin::xshut_front, pin::xshut_left,
+      pin::xshut_right, config::sensor_min_raw, config::sensor_max_raw,
       config::tof_timing_budget_us, main_queue, command_queue,
       config::imu_min_calib_samples, config::imu_max_init_attempts_per_boot,
       settings);
@@ -61,6 +60,25 @@ struct SideOwner {
                             config::tof_timing_budget_us,
                             settings};
   SideSensorSnapshot s;
+  void begin() {
+    bus.count = 4;
+    bus.devices[0].address = 0x30;
+    bus.devices[0].xshut = pin::xshut_rear_left;
+    bus.devices[1].address = 0x31;
+    bus.devices[1].xshut = pin::xshut_front_left;
+    bus.devices[2].address = 0x32;
+    bus.devices[2].xshut = pin::xshut_front_right;
+    bus.devices[3].address = 0x33;
+    bus.devices[3].xshut = pin::xshut_rear_right;
+    bus.set_publisher(
+        [](void *ctx) { static_cast<SideOwner *>(ctx)->publish(); }, this);
+    bus.begin();
+  }
+  void tick() {
+    bus.poll();
+    publish();
+    bus.recover();
+  }
   void publish() {
     s.dist_side_rear_left = bus.devices[0].data;
     s.dist_side_front_left = bus.devices[1].data;
@@ -72,18 +90,7 @@ struct SideOwner {
 };
 void side_tof_task(void *) {
   SideOwner owner;
-  auto &bus = owner.bus;
-  bus.count = 4;
-  bus.devices[0].address = 0x30;
-  bus.devices[1].address = 0x31;
-  bus.devices[1].xshut = pin::xshut_front_left;
-  bus.devices[2].address = 0x32;
-  bus.devices[2].xshut = pin::xshut_front_right;
-  bus.devices[3].address = 0x33;
-  bus.devices[3].xshut = pin::xshut_rear_right;
-  bus.set_publisher([](void *ctx) { static_cast<SideOwner *>(ctx)->publish(); },
-                    &owner);
-  bus.begin();
+  owner.begin();
   TickType_t wake = xTaskGetTickCount();
   uint32_t previous_start_us = micros();
   for (;;) {
@@ -91,9 +98,7 @@ void side_tof_task(void *) {
     owner.s.max_period_us =
         std::max(owner.s.max_period_us, start - previous_start_us);
     previous_start_us = start;
-    bus.poll();
-    owner.publish();
-    bus.recover();
+    owner.tick();
     owner.s.max_tick_us = std::max(owner.s.max_tick_us, micros() - start);
     owner.s.task_stack_min_bytes = uxTaskGetStackHighWaterMark(nullptr);
     cadence(wake);

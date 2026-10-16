@@ -125,7 +125,7 @@ static void motion_and_guidance() {
   s.dist_front.timestamp_us -= 100001;
   assert(!sensor_policy::required(s, now));
   sensor_policy::expire_all(s, now);
-  assert(s.dist_front.health == SensorHealth::STALE);
+  assert(s.dist_front.health == SensorHealth::READ_ERROR);
   assert(s.dist_front.distance_mm == 1000);
   for (RunningState mode :
        {RunningState::RUNNING, RunningState::REVERSE,
@@ -157,25 +157,20 @@ static void motion_and_guidance() {
 }
 static void quality_and_telemetry() {
   SensorData s = distance(120, 100);
-  for (uint8_t code : {0, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15}) {
-    assert(sensor_policy::accept_range(s, 900, code << 3, 200, 30, 1000));
-    assert(s.health == SensorHealth::RANGE_INVALID && s.error_count == 0);
-    assert(s.timestamp_us == 100 && s.distance_mm == 120 &&
+  // Range-status bytes remain diagnostic; they never cause reset loops.
+  for (unsigned code = 0; code < 16; ++code) {
+    sensor_policy::accept_range(s, 900, code << 3, 200, 30, 1000);
+    assert(s.health == SensorHealth::OK && s.error_count == 0);
+    assert(s.timestamp_us == 200 && s.distance_mm == 900 &&
            s.raw_timestamp_us == 200);
   }
-  for (uint16_t raw : {8190, 8191}) {
-    assert(sensor_policy::accept_range(s, raw, 11 << 3, 300, 30, 1000));
-    assert(s.health == SensorHealth::RANGE_INVALID && s.raw_range_mm == raw);
+  for (uint16_t raw : {1000, 1500, 8190, 8191, 65535}) {
+    sensor_policy::accept_range(s, raw, 11 << 3, 300, 30, 1000);
+    assert(s.health == SensorHealth::OUT_OF_RANGE && s.distance_mm == 1000);
+    assert(s.timestamp_us == 300 && s.raw_range_mm == raw);
   }
-  for (uint8_t code : {1, 2, 3}) {
-    assert(!sensor_policy::accept_range(s, 12, code << 3, 400, 30, 1000));
-    assert(s.health == SensorHealth::READ_ERROR &&
-           s.last_error == SensorError::HARDWARE_ERROR);
-  }
-  assert(s.error_count == 3 && s.consecutive_errors == 3);
-  sensor_policy::accept_range(s, 1500, 11 << 3, 500, 30, 1000);
-  assert(s.health == SensorHealth::OK && s.distance_mm == 1000 &&
-         s.consecutive_errors == 0);
+  sensor_policy::accept_range(s, 12, 11 << 3, 400, 30, 1000);
+  assert(s.health == SensorHealth::OK && s.distance_mm == 30);
   s.error_count = UINT32_MAX;
   s.consecutive_errors = UINT16_MAX;
   sensor_policy::fail(s, SensorError::NACK);
@@ -196,41 +191,20 @@ static void quality_and_telemetry() {
   assert(!is_sensor_fresh(0, 10, 100));
 }
 static void open_space_racing_fallback() {
-  for (uint8_t code : {4, 6, 9}) {
+  for (unsigned code = 0; code < 16; ++code) {
     for (uint16_t raw : {8190, 8191}) {
-      if (code == 9 && raw != 8190)
-        continue;
-      SensorData strict = distance(120, 100);
-      sensor_policy::accept_range(strict, raw, code << 3, 200, 30, 1000);
-      assert(strict.health == SensorHealth::RANGE_INVALID);
-      assert(
-          !sensor_policy::available(strict, 200)); // Other robots keep policy.
-      SensorData racing = strict;
-      assert(sensor_policy::accept_range(racing, raw, code << 3, 200, 30, 1000,
-                                         true));
-      assert(racing.health == SensorHealth::NO_RETURN);
+      SensorData racing;
+      sensor_policy::accept_range(racing, raw, code << 3, 200, 30, 1000);
+      assert(racing.health == SensorHealth::OUT_OF_RANGE);
       assert(racing.distance_mm == 1000 && racing.timestamp_us == 200);
-      assert(racing.raw_range_mm == raw && racing.raw_timestamp_us == 200);
       assert(racing.error_count == 0 && sensor_policy::available(racing, 200));
-      assert(!sensor_policy::available(racing, 100201));
       sensor_policy::expire(racing, 100201, sensor_policy::tof_age_us);
-      assert(racing.health == SensorHealth::STALE);
+      assert(racing.health == SensorHealth::READ_ERROR);
     }
-  }
-  for (uint8_t code : {0, 1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15}) {
-    SensorData sample;
-    sensor_policy::accept_range(sample, 8191, code << 3, 200, 30, 1000, true);
-    assert(!sensor_policy::available(sample, 200));
-  }
-  for (uint8_t code : {4, 6, 9}) {
-    SensorData near;
-    sensor_policy::accept_range(near, 80, code << 3, 200, 30, 1000, true);
-    assert(!sensor_policy::available(near, 200)); // Non-sentinel stays invalid.
   }
 
   TwoWire bus;
   sensor_policy::Settings settings;
-  settings.allow_no_return = true;
   sensor_policy::ToFBus tof(bus, 4, 5, 30, 1000, 20000, settings);
   tof.count = 3;
   tof.devices[1].xshut = 41;
@@ -262,7 +236,7 @@ static void open_space_racing_fallback() {
     auto telemetry = make_telemetry(state, 0);
     assert(telemetry.flags & 8);
     assert(telemetry.sensors[0].health ==
-           static_cast<uint8_t>(SensorHealth::NO_RETURN));
+           static_cast<uint8_t>(SensorHealth::OUT_OF_RANGE));
     assert(telemetry.dist_front == 1000 &&
            telemetry.raw_tof[0].range_mm == 8191);
   }
@@ -311,7 +285,6 @@ static void recovery_backoff_and_grace() {
   tof.poll();
   assert(!tof.recovery_due());
   auto old = tof.devices[0].data.timestamp_us;
-  tof.pause_begin();
   delay(450);
   tof.pause_end();
   VL53L0X::ready = false;
@@ -319,10 +292,10 @@ static void recovery_backoff_and_grace() {
   assert(tof.devices[0].data.timestamp_us == old && tof.grace_active());
   delay(99);
   tof.poll();
-  assert(!tof.devices[0].pending);
+  assert(tof.devices[0].data.health != SensorHealth::READ_ERROR);
   delay(1);
   tof.poll();
-  assert(tof.devices[0].pending);
+  assert(tof.devices[0].data.health == SensorHealth::READ_ERROR);
   assert(tof.devices[0].data.last_error == SensorError::MEASUREMENT_TIMEOUT);
   auto calls = VL53L0X::init_calls;
   assert(!tof.recovery_due()); // C3 recovery must wait for the retry deadline.
@@ -335,7 +308,6 @@ static void recovery_backoff_and_grace() {
   tof.poll();
   assert(tof.devices[0].data.health == SensorHealth::OK);
   // Ready results are consumed first even after a known 450 ms owner pause.
-  tof.pause_begin();
   delay(450);
   tof.pause_end();
   tof.poll();
@@ -348,8 +320,84 @@ static void recovery_backoff_and_grace() {
     tof.recover();
   }
   assert(VL53L0X::init_calls == calls &&
-         tof.devices[0].data.health == SensorHealth::RANGE_INVALID);
+         tof.devices[0].data.health == SensorHealth::OK);
   VL53L0X::result_status = 11 << 3;
+}
+static void targeted_recovery_and_fixed_retry() {
+  TwoWire bus;
+  sensor_policy::ToFBus tof(bus, 4, 5, 30, 1000);
+  tof.count = 3;
+  for (unsigned i = 0; i < 3; ++i) {
+    tof.devices[i].address = 0x30 + i;
+    tof.devices[i].xshut = 40 + i;
+  }
+  tof.begin();
+  assert(tof.devices[0].data.health == SensorHealth::RECOVERING);
+  tof.recover();
+  assert(!sensor_policy::available(tof.devices[0].data, micros()));
+  tof.poll();
+  VL53L0X::error_address = 0x31;
+  VL53L0X::injected_error = 2;
+  tof.poll();
+  assert(tof.devices[1].data.health == SensorHealth::READ_ERROR);
+  assert(tof.devices[1].data.error_count == 1);
+  assert(tof.devices[1].data.last_error == SensorError::NACK);
+  auto calls = VL53L0X::init_calls;
+  delay(499);
+  assert(!tof.recovery_due() && !tof.recover());
+  tof.poll();
+  assert(sensor_policy::available(tof.devices[0].data, micros()));
+  assert(sensor_policy::available(tof.devices[2].data, micros()));
+  delay(1);
+  assert(tof.recover()); // Address write fails; no init on the other devices.
+  assert(VL53L0X::init_calls == calls);
+  assert(tof.devices[1].data.health == SensorHealth::READ_ERROR);
+  VL53L0X::injected_error = 0;
+  delay(499);
+  tof.poll();
+  assert(!tof.recover()); // Fixed retry remains 500 ms after a failed attempt.
+  delay(1);
+  VL53L0X::initialized_addresses.clear();
+  assert(tof.recover());
+  assert(VL53L0X::initialized_addresses == std::vector<uint8_t>{0x31});
+  assert(tof.devices[1].data.health == SensorHealth::RECOVERING);
+  tof.poll();
+  assert(sensor_policy::available(tof.devices[1].data, micros()));
+  VL53L0X::error_address = -1;
+
+  // Repeated configuration/start failures remain unavailable and retry.
+  for (unsigned phase = 0; phase < 2; ++phase) {
+    VL53L0X::injected_error = 2;
+    VL53L0X::error_address = 0x31;
+    tof.poll();
+    VL53L0X::injected_error = 0;
+    VL53L0X::budget_ok = phase != 0;
+    VL53L0X::start_error = phase == 1 ? 2 : 0;
+    delay(500);
+    tof.recover();
+    assert(tof.devices[1].data.health == SensorHealth::READ_ERROR);
+    assert(!sensor_policy::available(tof.devices[1].data, micros()));
+    VL53L0X::budget_ok = true;
+    VL53L0X::start_error = 0;
+    delay(500);
+    tof.poll();
+    tof.recover();
+    tof.poll();
+    assert(tof.devices[1].data.health == SensorHealth::OK);
+  }
+  VL53L0X::error_address = -1;
+
+  // A stuck bus must be detected even while a group retry is pending.
+  fake_pin_levels[4] = LOW;
+  tof.poll();
+  assert(!sensor_policy::available(tof.devices[0].data, micros()));
+  delay(500);
+  assert(tof.bus_restart_due());
+  tof.recover();
+  assert(bus.ends == 1);
+  fake_pin_levels.clear();
+  tof.poll();
+  assert(sensor_policy::available(tof.devices[0].data, micros()));
 }
 static void failed_primary_keeps_group_isolated() {
   TwoWire bus;
@@ -362,13 +410,15 @@ static void failed_primary_keeps_group_isolated() {
   VL53L0X::init_ok = false;
   assert(tof.recover());
   assert(VL53L0X::init_calls == calls + 1);
-  assert(!tof.devices[1].active && !tof.devices[2].active);
+  assert(tof.devices[1].data.health == SensorHealth::READ_ERROR &&
+         tof.devices[2].data.health == SensorHealth::READ_ERROR);
   assert(!tof.recovery_due());
   VL53L0X::init_ok = true;
   delay(500);
   assert(tof.recover());
-  assert(tof.devices[0].active && tof.devices[1].active &&
-         tof.devices[2].active);
+  assert(tof.devices[0].data.health == SensorHealth::RECOVERING &&
+         tof.devices[1].data.health == SensorHealth::RECOVERING &&
+         tof.devices[2].data.health == SensorHealth::RECOVERING);
 }
 static void immediate_publication_and_raw_retention() {
   TwoWire bus;
@@ -432,7 +482,7 @@ static void owner_budget_and_calibration() {
   auto commands = xQueueCreate(4, sizeof(SensorCommand));
   TwoWire bus;
   seed_imu(bus);
-  sensor_policy::MainSensorOwner owner(bus, 4, 5, 42, 41, 30, 1000, 20000, q,
+  sensor_policy::MainSensorOwner owner(bus, 4, 5, -1, 42, 41, 30, 1000, 20000, q,
                                        commands);
   fake_imu_begin_ok = true;
   fake_accel_begins = 0;
@@ -497,7 +547,7 @@ static void failed_initialization_budget() {
     seed_imu(bus);
     bus.fail_status = 2;
     bus.fail_address = 0x19;
-    sensor_policy::MainSensorOwner owner(bus, 4, 5, 42, 41, 30, 1000, 20000, q,
+    sensor_policy::MainSensorOwner owner(bus, 4, 5, -1, 42, 41, 30, 1000, 20000, q,
                                          commands);
     fake_imu_begin_ok = begin_success;
     fake_accel_begins = 0;
@@ -538,6 +588,7 @@ int main() {
   quality_and_telemetry();
   open_space_racing_fallback();
   recovery_backoff_and_grace();
+  targeted_recovery_and_fixed_retry();
   failed_primary_keeps_group_isolated();
   immediate_publication_and_raw_retention();
   owner_budget_and_calibration();

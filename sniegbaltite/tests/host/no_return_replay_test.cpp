@@ -40,10 +40,9 @@ int main(int argc, char **argv) {
       uint16_t raw = beam.raw_range_mm;
       uint8_t status = beam.raw_status;
       uint32_t sampled_us = beam.raw_timestamp_us;
-      sensor_policy::accept_range(beam, raw, status, sampled_us, 30, 1000,
-                                  true);
+      sensor_policy::accept_range(beam, raw, status, sampled_us, 30, 1000);
     }
-    assert(s.dist_front.health == SensorHealth::NO_RETURN);
+    assert(s.dist_front.health == SensorHealth::OUT_OF_RANGE);
     assert(sensor_policy::required(s, s.current_time_us));
     assert(!sensor_motion_inhibit(s, false));
     assert(s.target_throttle == 0.3f);
