@@ -19,8 +19,17 @@ public:
   WheelCommands update(float throttle, float steering, bool allow_reverse,
                        bool inhibited, float dt) {
     float low = allow_reverse ? -1.0f : 0.0f;
-    float left = deadband(std::max(low, std::min(1.0f, throttle + steering)));
-    float right = deadband(std::max(low, std::min(1.0f, throttle - steering)));
+    float left_mix = throttle + steering;
+    float right_mix = throttle - steering;
+    if (!allow_reverse) {
+      // Forward driving: steer only by slowing the inner wheel so turns never
+      // speed the robot up. Wheel speed difference (2 * steering) is unchanged.
+      float shift = std::fabs(steering);
+      left_mix -= shift;
+      right_mix -= shift;
+    }
+    float left = deadband(std::max(low, std::min(1.0f, left_mix)));
+    float right = deadband(std::max(low, std::min(1.0f, right_mix)));
     if (inhibited)
       left = right = 0.0f;
     return {m_left.update(left, dt), m_right.update(right, dt)};

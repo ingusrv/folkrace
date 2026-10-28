@@ -48,6 +48,90 @@ static bool obstacle_detected = false;
 static RunningState prev_running_state = RunningState::IDLE;
 static float reverse_turn_steering = 0.0f;
 
+// Stall detection: no encoders/IMU, so detect "stuck" as all sensor readings
+// staying within a small band for too long while driving forward.
+static EMAFilter stall_front_filter(config::stall_filter_alpha);
+static EMAFilter stall_left_filter(config::stall_filter_alpha);
+static EMAFilter stall_right_filter(config::stall_filter_alpha);
+static bool stall_armed = false;
+static uint32_t stall_ref_us = 0;
+static float stall_ref_front_mm = 0.0f;
+static float stall_ref_left_adc = 0.0f;
+static float stall_ref_right_adc = 0.0f;
+
+static void stall_reset() { stall_armed = false; }
+
+/** @return ms the stall window has been running (0 when not armed). */
+static uint32_t stall_elapsed_ms(uint32_t now_us) {
+  return stall_armed ? (now_us - stall_ref_us) / 1000 : 0;
+}
+
+/**
+ * Track sensor movement and report a stall when nothing changes.
+ * Call every control tick so the stall filters stay warm.
+ * @param now_us Current time.
+ * @param front_mm Front ToF distance.
+ * @param driving True when the robot is commanded to move forward.
+ * @return true if readings stayed within the stall band for stall_detect_ms.
+ */
+static bool stall_update(uint32_t now_us, float front_mm, bool driving) {
+  // Far VL53L0X readings are noisy (and clamp at tof_max_mm), so cap them:
+  // beyond the cap the front sensor can't prove motion, the IRs must.
+  float front =
+      stall_front_filter.update(std::min(front_mm, config::stall_front_cap_mm));
+  float left = stall_left_filter.update(ir_left_adc);
+  float right = stall_right_filter.update(ir_right_adc);
+
+  if (!driving) {
+    stall_armed = false;
+    return false;
+  }
+  bool moved = !stall_armed ||
+               fabsf(front - stall_ref_front_mm) > config::stall_front_delta_mm ||
+               fabsf(left - stall_ref_left_adc) > config::stall_ir_delta_adc ||
+               fabsf(right - stall_ref_right_adc) > config::stall_ir_delta_adc;
+  if (moved) {
+    stall_armed = true;
+    stall_ref_us = now_us;
+    stall_ref_front_mm = front;
+    stall_ref_left_adc = left;
+    stall_ref_right_adc = right;
+    return false;
+  }
+  // Front at (filtered) cap = looking at open space, can't prove motion
+  bool front_blind = stall_ref_front_mm >=
+                     config::stall_front_cap_mm - config::stall_front_delta_mm;
+  uint16_t detect_ms =
+      front_blind ? config::stall_detect_blind_ms : config::stall_detect_ms;
+  return now_us - stall_ref_us >= static_cast<uint32_t>(detect_ms) * 1000;
+}
+
+/**
+ * Enter REVERSE, latching the escape turn direction from the side sensors.
+ */
+static void start_reverse() {
+  state.running_state = RunningState::REVERSE;
+  state.maneuver_start_us = state.current_time_us;
+  obstacle_detected = false;
+  obstacle_start_us = 0;
+  stall_reset();
+
+  // Latch turn direction for REVERSE and REVERSE_TURN phases:
+  // Sharp IR sensors: higher value = closer wall / obstacle.
+  // If left wall is closer (dist_left >= dist_right), turn right
+  // (+steer). Otherwise turn left (-steer). Using '>=' ensures
+  // head-on collisions (dist_left == dist_right) always pick a turn
+  // direction rather than oscillating straight back and forth.
+  reverse_turn_steering = (ir_left_adc >= ir_right_adc)
+                              ? config::reverse_turn_steer
+                              : -config::reverse_turn_steer;
+
+  // Differential drive: same steering sign while reversing swings
+  // the nose away from the wall, so we back off and turn at once.
+  state.target_throttle = -state.reverse_throttle;
+  state.target_steering = reverse_turn_steering * config::reverse_steer_factor;
+}
+
 static void init_espnow() {
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
@@ -175,6 +259,7 @@ void loop() {
     if (skip_control || (!inhibited && was_inhibited)) {
       obstacle_detected = false;
       obstacle_start_us = 0;
+      stall_reset();
       reset_pid(state.steering_pid);
       seed_pid = true;
       d_error_filter.reset();
@@ -196,10 +281,15 @@ void loop() {
         obstacle_detected = false;
         obstacle_start_us = 0;
       }
+      stall_reset(); // Re-arm stall window on every state change
       prev_running_state = state.running_state;
     }
 
     // Main State Machine
+    bool stalled = stall_update(
+        state.current_time_us, static_cast<float>(state.dist_front.distance_mm),
+        !skip_control && state.running_state == RunningState::RUNNING &&
+            state.current_throttle >= config::stall_min_throttle);
     if (!skip_control)
       switch (state.running_state) {
       case RunningState::IDLE:
@@ -227,6 +317,14 @@ void loop() {
         break;
 
       case RunningState::RUNNING: {
+        // Stall detection: catches getting stuck on obstacles the front
+        // sensor can't see (e.g. a pole hit off-center).
+        if (stalled) {
+          notify("[RUN] stall detected, reversing\n");
+          start_reverse();
+          break;
+        }
+
         // Front obstacle detection (VL53L0X: lower mm = closer) with debounce
         bool obstacle = (state.dist_reverse > 0 &&
                          state.dist_front.distance_mm < state.dist_reverse);
@@ -237,26 +335,7 @@ void loop() {
           } else if (state.current_time_us - obstacle_start_us >=
                      static_cast<uint32_t>(config::reverse_trigger_delay_ms) *
                          1000) {
-            state.running_state = RunningState::REVERSE;
-            state.maneuver_start_us = state.current_time_us;
-            obstacle_detected = false;
-            obstacle_start_us = 0;
-
-            // Latch turn direction for REVERSE and REVERSE_TURN phases:
-            // Sharp IR sensors: higher value = closer wall / obstacle.
-            // If left wall is closer (dist_left >= dist_right), turn right
-            // (+steer). Otherwise turn left (-steer). Using '>=' ensures
-            // head-on collisions (dist_left == dist_right) always pick a turn
-            // direction rather than oscillating straight back and forth.
-            reverse_turn_steering = (ir_left_adc >= ir_right_adc)
-                                        ? config::reverse_turn_steer
-                                        : -config::reverse_turn_steer;
-
-            // Differential drive: same steering sign while reversing swings
-            // the nose away from the wall, so we back off and turn at once.
-            state.target_throttle = -state.reverse_throttle;
-            state.target_steering =
-                reverse_turn_steering * config::reverse_steer_factor;
+            start_reverse();
             break;
           }
         } else {
@@ -361,8 +440,15 @@ void loop() {
     float left_throttle = 0.0f;
     float right_throttle = 0.0f;
     if (state.running_state != RunningState::IDLE) {
-      state.current_throttle =
-          throttle_limiter.update(state.target_throttle, delta_time);
+      if (state.running_state == RunningState::RUNNING) {
+        state.current_throttle =
+            throttle_limiter.update(state.target_throttle, delta_time);
+      } else {
+        // Maneuvers (reverse / pivot) bypass the slow forward-accel limiter;
+        // DriveOutput's per-wheel slew still bounds the motor transitions.
+        throttle_limiter.reset(state.target_throttle);
+        state.current_throttle = state.target_throttle;
+      }
       // No steering slew: DriveOutput's per-wheel slew already bounds it.
       state.current_steering = state.target_steering;
 
@@ -387,12 +473,13 @@ void loop() {
       last_debug_ms = state.current_time_ms;
       Serial.printf(
           "[RUN] st=%s f=%u l=%u r=%u err=%.2f de=%.2f throt=%.2f "
-          "steer=%.2f lthrot=%.2f rthrot=%.2f\n",
+          "steer=%.2f lthrot=%.2f rthrot=%.2f stall=%lums\n",
           running_state_to_str(state.running_state),
           state.dist_front.distance_mm, static_cast<unsigned>(ir_left_adc),
           static_cast<unsigned>(ir_right_adc), state.steering_pid.error,
           state.steering_pid.derivative, state.current_throttle,
-          state.current_steering, left_throttle, right_throttle);
+          state.current_steering, left_throttle, right_throttle,
+          static_cast<unsigned long>(stall_elapsed_ms(state.current_time_us)));
     }
   }
 

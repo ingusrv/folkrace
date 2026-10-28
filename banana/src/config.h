@@ -11,12 +11,26 @@ constexpr float wheel_slew_rate_accel = 6.0f;
 constexpr float wheel_slew_rate_decel = 10.0f;
 
 constexpr uint16_t start_delay_ms = 5000;
-constexpr uint16_t reverse_duration_ms = 250;
+constexpr uint16_t reverse_duration_ms = 350;
 constexpr uint16_t reverse_turn_duration_ms = 100; // Shorter pivot to prevent over-rotation
 constexpr uint16_t reverse_trigger_delay_ms = 250;
 constexpr float reverse_turn_steer = 0.30f; // Calmer pivot turn authority (prevents reverse oversteer)
 constexpr float reverse_steer_factor = 0.6f; // Fraction of reverse_turn_steer applied while backing up
 constexpr float motor_min_throttle = 0.18f;
+
+// Stall detection (no encoders): stuck if all sensors stay within these bands
+// for the detect time while driving forward. Signals are smoothed by a slow
+// EMA first so sensor noise doesn't keep resetting the stall window.
+// When the front ToF sees something (< cap) it reliably proves motion, so a
+// short window is enough; when it sees open space only the IRs can prove
+// motion, which also happens on straights / sweeping turns -> longer window.
+constexpr uint16_t stall_detect_ms = 600;
+constexpr uint16_t stall_detect_blind_ms = 1200;
+constexpr float stall_min_throttle = 0.05f;  // only check above this throttle
+constexpr float stall_filter_alpha = 0.08f;  // slow EMA (~120 ms @ 100 Hz)
+constexpr float stall_front_cap_mm = 950.0f; // mm: "front sees open space"
+constexpr float stall_front_delta_mm = 30.0f; // mm: front ToF movement band
+constexpr float stall_ir_delta_adc = 80.0f;   // ADC: Sharp IR movement band
 
 // Sharp analog IR distance sensors
 constexpr uint16_t sensor_min_raw = 25;
