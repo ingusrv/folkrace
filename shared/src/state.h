@@ -146,7 +146,7 @@ struct SensorData : SensorStatus {
   SensorData() { health = SensorHealth::RECOVERING; }
   uint16_t distance_mm = 0;
   uint16_t raw_range_mm = 0; // Unclamped VL53L0X result, including sentinels
-  uint8_t raw_status = 0;    // Full RESULT_RANGE_STATUS register
+  uint8_t raw_status = 0;    // Sensor-native status (model-specific)
   uint32_t raw_timestamp_us = 0; // Zero until the first consumed result
 };
 

@@ -40,14 +40,13 @@ void cmd_sensors(char *args) {
                  : static_cast<const SensorStatus &>(state.imu);
     if (distance) {
       notify("%d %s %s age=%u errors=%lu streak=%u error=%u "
-             "last_mm=%u raw_mm=%u status=0x%02x internal=%u raw_age=%u\n",
+             "last_mm=%u raw_mm=%u status=0x%02x raw_age=%u\n",
              i, names[i], sensor_health_to_str(status.health),
              sensor_policy::age_ms(status.timestamp_us, state.current_time_us),
              static_cast<unsigned long>(status.error_count),
              status.consecutive_errors,
              static_cast<unsigned>(status.last_error), distance->distance_mm,
              distance->raw_range_mm, distance->raw_status,
-             (distance->raw_status & 0x78) >> 3,
              sensor_policy::age_ms(distance->raw_timestamp_us,
                                    state.current_time_us));
     } else {

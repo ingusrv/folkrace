@@ -8,9 +8,9 @@
 
 #if __has_include(<BMI088.h>)
 namespace sensor_policy {
-class MainSensorOwner {
+template <typename ToF = ToFBus> class MainSensorOwnerT {
 public:
-  MainSensorOwner(TwoWire &bus, int sda, int scl, int front_xshut,
+  MainSensorOwnerT(TwoWire &bus, int sda, int scl, int front_xshut,
                   int left_xshut, int right_xshut, uint16_t minimum,
                   uint16_t maximum,
                   uint32_t budget, QueueHandle_t snapshots,
@@ -29,10 +29,10 @@ public:
     tof.devices[2].address = 0x32;
     tof.devices[2].xshut = left_xshut;
     tof.set_publisher(
-        [](void *ctx) { static_cast<MainSensorOwner *>(ctx)->publish(); },
+        [](void *ctx) { static_cast<MainSensorOwnerT *>(ctx)->publish(); },
         this);
   }
-  ToFBus tof;
+  ToF tof;
   MainSensorSnapshot snapshot;
   uint32_t init_duration_us = 0;
   void begin() {
@@ -245,5 +245,6 @@ private:
   Backoff m_backoff;
   float m_sum[6] = {}, m_bx = 0.0f, m_by = 0.0f, m_bz = 0.0f;
 };
+using MainSensorOwner = MainSensorOwnerT<>;
 } // namespace sensor_policy
 #endif

@@ -27,8 +27,34 @@ inline void accept_range(SensorData &out, uint16_t raw, uint8_t status,
     out.health = SensorHealth::OUT_OF_RANGE;
 }
 
-struct ToFDevice {
-  VL53L0X driver;
+/** Accept a VL53L0X result using its existing sentinel-based range policy. */
+inline void tof_accept_range(VL53L0X &, SensorData &out, uint16_t raw,
+                             uint8_t status, uint32_t now, uint16_t minimum,
+                             uint16_t maximum) {
+  accept_range(out, raw, status, now, minimum, maximum);
+}
+
+// Sensor-specific polling stays separate from bus recovery and freshness.
+inline uint8_t tof_read_sample(VL53L0X &driver, bool &ready,
+                               uint16_t &range_mm, uint8_t &status) {
+  uint8_t interrupt = driver.readReg(VL53L0X::RESULT_INTERRUPT_STATUS);
+  if (driver.last_status)
+    return driver.last_status;
+  ready = (interrupt & 7) != 0;
+  if (!ready)
+    return 0;
+  uint8_t result[12] = {};
+  driver.readMulti(VL53L0X::RESULT_RANGE_STATUS, result, sizeof(result));
+  if (driver.last_status)
+    return driver.last_status;
+  driver.writeReg(VL53L0X::SYSTEM_INTERRUPT_CLEAR, 1);
+  range_mm = (static_cast<uint16_t>(result[10]) << 8) | result[11];
+  status = result[0];
+  return driver.last_status;
+}
+
+template <typename Driver> struct ToFDeviceT {
+  Driver driver;
   SensorData data;
   int8_t xshut = -1;
   uint8_t address = 0x30;
@@ -37,13 +63,14 @@ struct ToFDevice {
 };
 
 // One task owns each bus. C3 callers stop motors before blocking recovery.
-class ToFBus {
+template <typename Driver> class ToFBusT {
 public:
   using Publish = void (*)(void *);
-  ToFBus(TwoWire &bus, int sda, int scl, uint16_t minimum, uint16_t maximum,
+  ToFBusT(TwoWire &bus, int sda, int scl, uint16_t minimum, uint16_t maximum,
          uint32_t budget = 20000, const Settings &settings = {})
       : m_bus(bus), m_sda(sda), m_scl(scl), m_min(minimum), m_max(maximum),
         m_budget(budget), m_settings(settings) {}
+  using ToFDevice = ToFDeviceT<Driver>;
   ToFDevice devices[4];
   unsigned count = 0;
   void set_publisher(Publish publish, void *context) {
@@ -171,28 +198,19 @@ private:
       m_publish(m_context);
   }
   void poll_device(ToFDevice &d) {
-    uint8_t ready = d.driver.readReg(VL53L0X::RESULT_INTERRUPT_STATUS);
-    if (d.driver.last_status) {
-      fault(d, wire_error(d.driver.last_status));
+    bool ready = false;
+    uint16_t range_mm = 0;
+    uint8_t status = 0;
+    uint8_t error = tof_read_sample(d.driver, ready, range_mm, status);
+    if (error) {
+      fault(d, wire_error(error));
       return;
     }
-    if (ready & 7) {
-      uint8_t result[12] = {};
-      d.driver.readMulti(VL53L0X::RESULT_RANGE_STATUS, result, sizeof(result));
-      if (d.driver.last_status) {
-        fault(d, wire_error(d.driver.last_status));
-        return;
-      }
-      d.driver.writeReg(VL53L0X::SYSTEM_INTERRUPT_CLEAR, 1);
-      if (d.driver.last_status) {
-        fault(d, wire_error(d.driver.last_status));
-        return;
-      }
+    if (ready) {
       d.result_us = micros();
       d.grace_start_us = 0;
-      accept_range(d.data,
-                   (static_cast<uint16_t>(result[10]) << 8) | result[11],
-                   result[0], d.result_us, m_min, m_max);
+      tof_accept_range(d.driver, d.data, range_mm, status, d.result_us,
+                       m_min, m_max);
     } else {
       uint32_t start = d.grace_start_us ? d.grace_start_us : d.result_us;
       uint32_t timeout = d.grace_start_us ? m_settings.tof_resume_grace_us
@@ -234,7 +252,7 @@ private:
     return m_bus.endTransmission() == 0;
   }
   bool initialize(ToFDevice &d) {
-    d.driver = VL53L0X();
+    d.driver = Driver();
     d.driver.setBus(&m_bus);
     d.driver.setTimeout(m_settings.tof_timeout_ms);
     if (d.xshut >= 0) {
@@ -305,4 +323,6 @@ private:
   bool m_group_pending = true, m_reset_bus = false;
   uint32_t m_group_retry_ms = 0;
 };
+using ToFDevice = ToFDeviceT<VL53L0X>;
+using ToFBus = ToFBusT<VL53L0X>;
 } // namespace sensor_policy

@@ -596,6 +596,12 @@ void loop() {
       drive_motor.stop();
       steer_servo.write(config::servo_deg_middle);
     } else if (state.running_state != RunningState::IDLE) {
+      // Gentler forward acceleration without slowing reverse recovery.
+      throttle_limiter.set_rates(
+          state.target_throttle < 0.0f
+              ? config::throttle_slew_rate_reverse_accel
+              : config::throttle_slew_rate_accel,
+          config::throttle_slew_rate_decel);
       state.current_throttle =
           throttle_limiter.update(state.target_throttle, delta_time);
       state.current_steering =

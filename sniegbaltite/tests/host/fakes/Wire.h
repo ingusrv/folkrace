@@ -13,6 +13,7 @@ public:
   uint16_t reg = 0;
   bool register16 = false;
   int fail_address = -1, fail_reg = -1, short_reg = -1;
+  int short_address = -1;
   unsigned requested = 0, position = 0, begins = 0, ends = 0, timeout_ms = 0;
   bool begin(int = -1, int = -1, unsigned = 400000) {
     ++begins;
@@ -51,7 +52,9 @@ public:
   uint8_t requestFrom(uint8_t a, uint8_t n) {
     address = a;
     position = 0;
-    requested = short_reg == reg ? n - 1 : n;
+    requested = short_reg == reg && (short_address < 0 || short_address == a)
+                    ? n - 1
+                    : n;
     return requested;
   }
   unsigned available() { return requested - position; }

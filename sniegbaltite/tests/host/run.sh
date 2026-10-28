@@ -51,3 +51,11 @@ c++ -std=c++17 -Wall -Wextra -Werror \
   -I"$host_tests/fakes" -I"$shared_dir/src" \
   "$host_tests/no_return_replay_test.cpp" -o "$build_dir/no_return_replay_test"
 "$build_dir/no_return_replay_test" "$host_tests/fixtures/no_return_2026-10-14.txt"
+
+front_driver="$project_dir/lib/vl53l4cd/src"
+c++ -std=c++17 -Wall -Wextra -Werror \
+  -I"$host_tests/fakes" -I"$shared_dir/src" -I"$project_dir/src" \
+  -I"$front_driver" "$host_tests/front_transport_test.cpp" \
+  "$front_driver/platform.cpp" "$front_driver/vl53l4cd_api.cpp" \
+  -o "$build_dir/front_transport_test"
+"$build_dir/front_transport_test" "$host_tests/fixtures/l4cd_startup_2026-10-28.txt"

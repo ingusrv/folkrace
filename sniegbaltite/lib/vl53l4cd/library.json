@@ -1,0 +1,7 @@
+{
+  "name": "folkrace-vl53l4cd",
+  "version": "1.0.5",
+  "frameworks": "arduino",
+  "platforms": "*",
+  "description": "ST VL53L4CD ULD with bounded, checked Wire transport"
+}

@@ -1,5 +1,6 @@
 #include "sensors.h"
 #include "config.h"
+#include "front_tof.h"
 #include "sensors/main_owner.h"
 #include <freertos/task.h>
 #include <type_traits>
@@ -29,10 +30,10 @@ void cadence(TickType_t &wake) {
   }
 }
 void main_sensor_task(void *) {
-  sensor_policy::MainSensorOwner owner(
+  sensor_policy::MainSensorOwnerT<sensor_policy::ToFBusT<FrontToF>> owner(
       Wire, pin::sda, pin::scl, pin::xshut_front, pin::xshut_left,
       pin::xshut_right, config::sensor_min_raw, config::sensor_max_raw,
-      config::tof_timing_budget_us, main_queue, command_queue,
+      config::front_tof_timing_budget_us, main_queue, command_queue,
       config::imu_min_calib_samples, config::imu_max_init_attempts_per_boot,
       settings);
   owner.begin();
@@ -57,19 +58,18 @@ struct SideOwner {
                             pin::scl_side,
                             config::sensor_min_raw,
                             config::sensor_max_raw,
-                            config::tof_timing_budget_us,
+                            config::side_tof_timing_budget_us,
                             settings};
   SideSensorSnapshot s;
   void begin() {
-    bus.count = 4;
-    bus.devices[0].address = 0x30;
-    bus.devices[0].xshut = pin::xshut_rear_left;
-    bus.devices[1].address = 0x31;
-    bus.devices[1].xshut = pin::xshut_front_left;
-    bus.devices[2].address = 0x32;
-    bus.devices[2].xshut = pin::xshut_front_right;
-    bus.devices[3].address = 0x33;
-    bus.devices[3].xshut = pin::xshut_rear_right;
+    // Rear side sensors are disconnected; exclude them from all bus activity.
+    s.dist_side_rear_left.health = SensorHealth::OFFLINE;
+    s.dist_side_rear_right.health = SensorHealth::OFFLINE;
+    bus.count = 2;
+    bus.devices[0].address = 0x31;
+    bus.devices[0].xshut = pin::xshut_front_left;
+    bus.devices[1].address = 0x32;
+    bus.devices[1].xshut = pin::xshut_front_right;
     bus.set_publisher(
         [](void *ctx) { static_cast<SideOwner *>(ctx)->publish(); }, this);
     bus.begin();
@@ -80,10 +80,8 @@ struct SideOwner {
     bus.recover();
   }
   void publish() {
-    s.dist_side_rear_left = bus.devices[0].data;
-    s.dist_side_front_left = bus.devices[1].data;
-    s.dist_side_front_right = bus.devices[2].data;
-    s.dist_side_rear_right = bus.devices[3].data;
+    s.dist_side_front_left = bus.devices[0].data;
+    s.dist_side_front_right = bus.devices[1].data;
     s.publish_timestamp_us = micros();
     xQueueOverwrite(side_queue, &s);
   }
