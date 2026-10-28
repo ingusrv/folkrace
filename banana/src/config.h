@@ -5,13 +5,17 @@ namespace config {
 // Slew rates in normalized units per second (1.0 = 100% throttle / sec)
 constexpr float throttle_slew_rate_decel = 3.0f;
 constexpr float throttle_slew_rate_accel = 1.0f;
-constexpr float steering_slew_rate = 6.0f; // Slew rate in units per second
+// Per-wheel slew after mixing; must be fast so steering and reverse maneuvers
+// are not throttled by the (slow) forward acceleration limit.
+constexpr float wheel_slew_rate_accel = 6.0f;
+constexpr float wheel_slew_rate_decel = 10.0f;
 
 constexpr uint16_t start_delay_ms = 5000;
 constexpr uint16_t reverse_duration_ms = 250;
 constexpr uint16_t reverse_turn_duration_ms = 100; // Shorter pivot to prevent over-rotation
 constexpr uint16_t reverse_trigger_delay_ms = 250;
 constexpr float reverse_turn_steer = 0.30f; // Calmer pivot turn authority (prevents reverse oversteer)
+constexpr float reverse_steer_factor = 0.6f; // Fraction of reverse_turn_steer applied while backing up
 constexpr float motor_min_throttle = 0.18f;
 
 // Sharp analog IR distance sensors

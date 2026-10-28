@@ -24,8 +24,6 @@ RobotState state = {};
 
 static SlewRateLimiter throttle_limiter(config::throttle_slew_rate_accel,
                                         config::throttle_slew_rate_decel);
-static SlewRateLimiter steering_limiter(config::steering_slew_rate,
-                                        config::steering_slew_rate);
 
 static EMAFilter left_sensor_filter(config::sensor_ema_alpha);
 static EMAFilter right_sensor_filter(config::sensor_ema_alpha);
@@ -37,8 +35,8 @@ static sensor_policy::ToFBus sensor_bus(Wire, pin::sda, pin::scl,
                                         config::tof_min_mm, config::tof_max_mm,
                                         config::tof_timing_budget_us);
 static float ir_left_adc = 0.0f, ir_right_adc = 0.0f;
-static DriveOutput drive_output(config::throttle_slew_rate_accel,
-                                config::throttle_slew_rate_decel,
+static DriveOutput drive_output(config::wheel_slew_rate_accel,
+                                config::wheel_slew_rate_decel,
                                 config::motor_min_throttle);
 static bool recovery_stopping = false;
 static bool was_inhibited = true;
@@ -191,17 +189,12 @@ void loop() {
         reset_pid(state.steering_pid);
         throttle_limiter.reset(0.0f);
         drive_output.reset();
-        steering_limiter.reset(0.0f);
         left_sensor_filter.reset();
         right_sensor_filter.reset();
         d_error_filter.reset();
         prev_error = 0.0f;
         obstacle_detected = false;
         obstacle_start_us = 0;
-      } else if (state.running_state == RunningState::REVERSE) {
-        steering_limiter.reset(0.0f);
-      } else if (state.running_state == RunningState::REVERSE_TURN) {
-        steering_limiter.reset(reverse_turn_steering);
       }
       prev_running_state = state.running_state;
     }
@@ -226,7 +219,6 @@ void loop() {
             required_ready && !recovery_stopping) {
           state.running_state = RunningState::RUNNING;
           reset_pid(state.steering_pid);
-          steering_limiter.reset(0.0f);
           d_error_filter.reset();
           prev_error = 0.0f;
           obstacle_detected = false;
@@ -247,13 +239,10 @@ void loop() {
                          1000) {
             state.running_state = RunningState::REVERSE;
             state.maneuver_start_us = state.current_time_us;
-            state.target_throttle = -state.reverse_throttle;
-            state.target_steering = 0.0f;
-            steering_limiter.reset(0.0f);
             obstacle_detected = false;
             obstacle_start_us = 0;
 
-            // Latch pivot turn direction for REVERSE_TURN phase:
+            // Latch turn direction for REVERSE and REVERSE_TURN phases:
             // Sharp IR sensors: higher value = closer wall / obstacle.
             // If left wall is closer (dist_left >= dist_right), turn right
             // (+steer). Otherwise turn left (-steer). Using '>=' ensures
@@ -262,6 +251,12 @@ void loop() {
             reverse_turn_steering = (ir_left_adc >= ir_right_adc)
                                         ? config::reverse_turn_steer
                                         : -config::reverse_turn_steer;
+
+            // Differential drive: same steering sign while reversing swings
+            // the nose away from the wall, so we back off and turn at once.
+            state.target_throttle = -state.reverse_throttle;
+            state.target_steering =
+                reverse_turn_steering * config::reverse_steer_factor;
             break;
           }
         } else {
@@ -318,15 +313,17 @@ void loop() {
         // radius, but maintains full climbing drive when running straight up
         // hills/ramps.
         float steer_slowdown = 1.0f - 0.35f * fabs(state.target_steering);
+        // Minimum motor drive is handled by DriveOutput's deadband mapping;
+        // clamping here as well would apply it twice.
         state.target_throttle = throttle * steer_slowdown;
-        state.target_throttle =
-            std::max(state.target_throttle, config::motor_min_throttle);
         break;
       }
 
       case RunningState::REVERSE: {
         state.target_throttle = -state.reverse_throttle;
-        state.target_steering = 0.0f; // Pure straight reverse to clear obstacle
+        // Steer while backing up so the nose swings away from the obstacle
+        state.target_steering =
+            reverse_turn_steering * config::reverse_steer_factor;
 
         if (state.current_time_us - state.maneuver_start_us >=
             static_cast<uint32_t>(config::reverse_duration_ms) * 1000) {
@@ -345,7 +342,6 @@ void loop() {
         if (state.current_time_us - state.maneuver_start_us >=
             static_cast<uint32_t>(config::reverse_turn_duration_ms) * 1000) {
           reset_pid(state.steering_pid);
-          steering_limiter.reset(0.0f);
           d_error_filter.reset();
           prev_error = 0.0f;
           obstacle_detected = false;
@@ -367,8 +363,8 @@ void loop() {
     if (state.running_state != RunningState::IDLE) {
       state.current_throttle =
           throttle_limiter.update(state.target_throttle, delta_time);
-      state.current_steering =
-          steering_limiter.update(state.target_steering, delta_time);
+      // No steering slew: DriveOutput's per-wheel slew already bounds it.
+      state.current_steering = state.target_steering;
 
       auto outputs = drive_output.update(
           state.current_throttle, state.current_steering,
@@ -400,7 +396,7 @@ void loop() {
     }
   }
 
-#if 0
+#if 1
   if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
     last_telemetry_us += telemetry_interval_us;
     if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
