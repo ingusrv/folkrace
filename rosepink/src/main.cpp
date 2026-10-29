@@ -29,7 +29,7 @@
 ESC drive_motor = ESC(pin::esc);
 Servo steer_servo = Servo(pin::servo);
 static MainSensorSnapshot main_snapshot;
-static RosepinkSideSnapshot side_snapshot;
+static RosepinkToFSnapshot tof_snapshot;
 static SensorStartup startup;
 static SensorLED sensor_led;
 static BatteryMonitor battery_monitor;
@@ -175,22 +175,24 @@ void loop() {
     }
     previous_control_us = state.current_time_us;
     sensors::get_main_snapshot(main_snapshot);
-    sensors::get_side_snapshot(side_snapshot);
-    state.dist_front = main_snapshot.dist_front;
-    state.dist_left = main_snapshot.dist_left;
-    state.dist_right = main_snapshot.dist_right;
-    state.dist_side_front_left = side_snapshot.dist_side_front_left;
-    state.dist_side_rear_left = side_snapshot.dist_side_rear_left;
-    state.dist_side_front_right = side_snapshot.dist_side_front_right;
-    state.dist_side_rear_right = side_snapshot.dist_side_rear_right;
+    sensors::get_tof_snapshot(tof_snapshot);
+    sensors::poll_diagnostics();
+    state.dist_front = tof_snapshot.dist_front;
+    state.dist_left = tof_snapshot.dist_left;
+    state.dist_right = tof_snapshot.dist_right;
+    state.dist_side_front_left.health = SensorHealth::ABSENT;
+    state.dist_side_rear_left.health = SensorHealth::ABSENT;
+    state.dist_side_front_right.health = SensorHealth::ABSENT;
+    state.dist_side_rear_right.health = SensorHealth::ABSENT;
     state.imu = main_snapshot.imu;
     // Must follow both queue copies: a concurrent sample cannot be in the
     // future.
     state.current_time_us = micros();
     state.current_time_ms = millis();
     sensor_policy::expire_all(state, state.current_time_us);
-    bool required_ready = sensors_started &&
-                          sensor_policy::required(state, state.current_time_us);
+    bool required_ready =
+        sensors_started &&
+        sensors::ranging_ready(tof_snapshot, state.current_time_us);
     bool imu_ready = startup.imu_enabled(main_snapshot) &&
                      is_imu_available(state.imu, state.current_time_us,
                                       config::sensor_freshness_imu_us);
@@ -448,7 +450,7 @@ void loop() {
         }
 
         SensorGuidance guidance =
-            multizone_guidance(state, side_snapshot, state.current_time_us);
+            multizone_guidance(state, tof_snapshot, state.current_time_us);
         float raw_steer_target = obstacle_avoidance.steer(guidance.steering);
         float front_urgency =
             std::max(guidance.urgency, obstacle_avoidance.urgency());
@@ -619,6 +621,11 @@ void loop() {
       drive_motor.write(state.current_throttle);
     }
 
+    // Only acknowledge after the zero command has reached the ESC. The ToF
+    // request stays asserted through each blocking reload, inhibiting motion.
+    if (tof_snapshot.recovering && state.current_throttle == 0.0f)
+      sensors::acknowledge_stopped(tof_snapshot.recovery_id);
+
     // telemetry logging
     if (state.current_time_us - last_telemetry_us >= telemetry_interval_us) {
       last_telemetry_us += telemetry_interval_us;
@@ -632,24 +639,66 @@ void loop() {
 
 void sensor_task_diagnostics() {
   MainSensorSnapshot main;
-  RosepinkSideSnapshot side;
+  RosepinkToFSnapshot side;
   sensors::get_main_snapshot(main);
-  sensors::get_side_snapshot(side);
-  notify("[SENSORS] main stack_min=%lu bytes max_tick=%lu us imu_init=%lu us\n",
-         static_cast<unsigned long>(main.task_stack_min_bytes),
-         static_cast<unsigned long>(main.max_tick_us),
-         static_cast<unsigned long>(main.last_imu_init_us));
-  notify("[SENSORS] side stack_min=%lu bytes max_tick=%lu us generation=%lu\n",
-         static_cast<unsigned long>(side.task_stack_min_bytes),
-         static_cast<unsigned long>(side.max_tick_us),
-         static_cast<unsigned long>(main.orientation_generation));
-  notify("[SENSORS] walls L=%.0f mm heading=%.1f deg confidence=%.2f "
-         "R=%.0f mm heading=%.1f deg confidence=%.2f\n",
-         side.left_wall.distance_mm, side.left_wall.heading_error_deg,
-         side.left_wall.confidence, side.right_wall.distance_mm,
-         side.right_wall.heading_error_deg, side.right_wall.confidence);
-  notify("[SENSORS] max periods: main=%lu side=%lu control=%lu us\n",
-         static_cast<unsigned long>(main.max_period_us),
-         static_cast<unsigned long>(side.max_period_us),
-         static_cast<unsigned long>(control_max_period_us.load()));
+  sensors::get_tof_snapshot(side);
+  sensors::notify_init_diagnostics(side);
+  sensors::queue_diagnostic(
+      "[SENSORS] calibration active=%u valid=%u samples=%u "
+      "tof_reload=%u request=%lu\n",
+      main.imu_calib_in_progress, main.imu_calib_valid,
+      main.imu_calib_sample_count, side.recovering,
+      static_cast<unsigned long>(side.recovery_id));
+  sensors::queue_diagnostic(
+      "[SENSORS] main stack_min=%lu bytes max_tick=%lu us imu_init=%lu us\n",
+      static_cast<unsigned long>(main.task_stack_min_bytes),
+      static_cast<unsigned long>(main.max_tick_us),
+      static_cast<unsigned long>(main.last_imu_init_us));
+  sensors::queue_diagnostic(
+      "[SENSORS] tof stack_min=%lu bytes max_tick=%lu us generation=%lu\n",
+      static_cast<unsigned long>(side.task_stack_min_bytes),
+      static_cast<unsigned long>(side.max_tick_us),
+      static_cast<unsigned long>(main.orientation_generation));
+  sensors::queue_diagnostic(
+      "[SENSORS] walls L=%.0f mm heading=%.1f deg confidence=%.2f "
+      "R=%.0f mm heading=%.1f deg confidence=%.2f\n",
+      side.left_wall.distance_mm, side.left_wall.heading_error_deg,
+      side.left_wall.confidence, side.right_wall.distance_mm,
+      side.right_wall.heading_error_deg, side.right_wall.confidence);
+  const SensorData *ranges[] = {&side.dist_front, &side.dist_left,
+                                &side.dist_right};
+  for (unsigned i = 0; i < 3; ++i)
+    sensors::queue_diagnostic(
+        "[TOF] sensor=%u frames=%lu bytes=%u max_read=%lu us age=%u ms "
+        "health=%s\n",
+        i, static_cast<unsigned long>(side.frame_count[i]), side.frame_bytes[i],
+        static_cast<unsigned long>(side.max_read_us[i]),
+        sensor_policy::age_ms(ranges[i]->timestamp_us, micros()),
+        sensor_health_to_str(ranges[i]->health));
+  sensors::queue_diagnostic(
+      "[TOF] matrices: logical top-left first; cells=mm/status/targets; "
+      "mask bits=row*4+col; near=255 means open\n");
+  for (unsigned i = 0; i < 3; ++i) {
+    const auto &z = side.zones[i];
+    sensors::queue_diagnostic(
+        "[TOF] sensor=%u height=%.0f pitch=%.1f flip=%u/%u "
+        "ignore=0x%04x valid=0x%04x floor=0x%04x clearance=0x%04x near=%u\n",
+        i, config::tof_height_mm[i], z.pitch_deg, config::tof_flip_x[i],
+        config::tof_flip_y[i], config::tof_ignore_zones[i], z.valid_zones,
+        z.floor_zones, z.clearance_zones, z.nearest_zone);
+    for (unsigned r = 0; r < 4; ++r) {
+      unsigned j = r * 4;
+      sensors::queue_diagnostic(
+          "[TOF] sensor=%u row=%u %d/%u/%u %d/%u/%u %d/%u/%u %d/%u/%u\n", i, r,
+          z.range_mm[j], z.status[j], z.targets[j], z.range_mm[j + 1],
+          z.status[j + 1], z.targets[j + 1], z.range_mm[j + 2], z.status[j + 2],
+          z.targets[j + 2], z.range_mm[j + 3], z.status[j + 3],
+          z.targets[j + 3]);
+    }
+  }
+  sensors::queue_diagnostic(
+      "[SENSORS] max periods: imu=%lu tof=%lu control=%lu us\n",
+      static_cast<unsigned long>(main.max_period_us),
+      static_cast<unsigned long>(side.max_period_us),
+      static_cast<unsigned long>(control_max_period_us.load()));
 }

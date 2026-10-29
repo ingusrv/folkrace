@@ -7,65 +7,138 @@
 struct SideWallEstimate {
   float distance_mm = config::sensor_max_raw;
   float min_distance_mm = config::sensor_max_raw;
-  float front_dist_mm = config::sensor_max_raw;
-  float rear_dist_mm = config::sensor_max_raw;
   float heading_error_rad = 0.0f;
   float heading_error_deg = 0.0f;
   float confidence = 0.0f;
   bool valid = false;
 };
 
-// Existing mounting calibration: columns run rear to front after flip_x.
-static constexpr float col_sin[4] = {-0.290285f, -0.098017f, 0.098017f,
-                                     0.290285f};
-static constexpr float col_cos[4] = {0.956940f, 0.995185f, 0.995185f,
-                                     0.956940f};
+struct ForwardFrame {
+  SideWallEstimate wall;
+  uint16_t distance_mm = config::sensor_max_raw;
+  bool valid = false;
+  bool open = true;
+  uint16_t valid_zones = 0;
+  uint16_t floor_zones = 0;
+  uint16_t clearance_zones = 0;
+  uint8_t nearest_zone = 255; // Logical top-left-first zone, 255 if open.
+};
 
-/** Fit a wall from all 16 zones while retaining independent near clearances.
- * Column medians reject isolated floor/top-edge returns. Three-column line
- * consensus rejects a pole or an opening from the heading estimate. Sparse
- * frames still provide clearance, but cannot invent a wall heading.
+/** Project calibrated zone rays into robot coordinates: x forward, y right.
+ * Clearance uses every valid above-floor point; heading needs three columns
+ * agreeing on a wall. No rear-side readings are synthesized.
  */
-inline SideWallEstimate process_vl53l5cx(const VL53L5CX_ResultsData &data,
-                                         bool flip_x, bool flip_y,
-                                         bool is_left) {
-  SideWallEstimate est;
+inline ForwardFrame process_forward_vl53l5cx(const VL53L5CX_ResultsData &data,
+                                             unsigned sensor, float pitch_deg) {
+  constexpr float radians = 3.14159265f / 180.0f;
+  ForwardFrame frame;
+  auto &est = frame.wall;
   float x[4] = {}, y[4] = {};
   unsigned count = 0, zones = 0;
-  float front = INFINITY, rear = INFINITY;
+  float yaw = config::tof_yaw_deg[sensor] * radians;
+  float pitch =
+      (config::tof_pitch_deg[sensor] + config::tof_imu_pitch_sign * pitch_deg) *
+      radians;
+  float nearest = config::sensor_max_raw;
+  float min_lateral = config::sensor_max_raw;
+  bool evidence = false;
   for (unsigned c = 0; c < 4; ++c) {
-    float ranges[4];
+    float column_x[4], column_y[4];
     unsigned n = 0;
+    float h =
+        std::atan(((c + 0.5f) * 0.5f - 1.0f) *
+                  std::tan(config::tof_horizontal_fov_deg * radians * 0.5f));
     for (unsigned r = 0; r < 4; ++r) {
-      unsigned index = (flip_y ? 3 - r : r) * 4 + (flip_x ? 3 - c : c);
+      unsigned logical_zone = r * 4 + c;
+      if (config::tof_ignore_zones[sensor] & (1U << logical_zone))
+        continue;
+      unsigned index = (config::tof_flip_y[sensor] ? 3 - r : r) * 4 +
+                       (config::tof_flip_x[sensor] ? 3 - c : c);
       unsigned target = index * VL53L5CX_NB_TARGET_PER_ZONE;
       uint8_t status = data.target_status[target];
-      float range = data.distance_mm[target];
-      if ((status != 5 && status != 9) || range <= 0.0f)
+      if (data.nb_target_detected[index] == 0 && status == 255) {
+        evidence = true; // A completed no-target zone, not a transport failure.
         continue;
-      ranges[n++] = range;
-      ++zones;
-      // All valid zones contribute to collision clearance, including points
-      // rejected by the wall model. Do not smooth away a nearby competitor.
-      float lateral = range * col_cos[c];
-      float &sector = c < 2 ? rear : front;
-      sector = std::min(sector, lateral);
+      }
+      float range = data.distance_mm[target];
+      if (!data.nb_target_detected[index] || (status != 5 && status != 9) ||
+          range <= 0.0f)
+        continue;
+      evidence = true;
+      frame.valid_zones |= 1U << logical_zone;
+      float v =
+          std::atan((1.0f - (r + 0.5f) * 0.5f) *
+                    std::tan(config::tof_vertical_fov_deg * radians * 0.5f));
+      float forward = range * std::cos(v) * std::cos(h);
+      float right = range * std::cos(v) * std::sin(h);
+      float up = range * std::sin(v);
+      float leveled_forward = forward * std::cos(pitch) - up * std::sin(pitch);
+      float height = config::tof_height_mm[sensor] + forward * std::sin(pitch) +
+                     up * std::cos(pitch);
+      // A 4x4 zone covers an angular area, not just its center ray. Floor
+      // returns within its lower edge can otherwise project above the floor
+      // (e.g. the recorded 417-460 mm returns in the lower-middle row).
+      // Preserve close objects whose whole vertical footprint is above floor.
+      float lower_v =
+          std::atan((1.0f - (r + 1.0f) * 0.5f) *
+                    std::tan(config::tof_vertical_fov_deg * radians * 0.5f));
+      float lower_height =
+          config::tof_height_mm[sensor] +
+          range * (std::cos(lower_v) * std::cos(h) * std::sin(pitch) +
+                   std::sin(lower_v) * std::cos(pitch));
+      if (std::min(height, lower_height) < config::tof_floor_reject_height_mm) {
+        frame.floor_zones |= 1U << logical_zone;
+        continue;
+      }
+      float px = config::tof_forward_mm[sensor] +
+                 leveled_forward * std::cos(yaw) - right * std::sin(yaw);
+      float py = config::tof_right_mm[sensor] +
+                 leveled_forward * std::sin(yaw) + right * std::cos(yaw);
+      if (px <= 0.0f)
+        continue;
+      if (sensor == 0) {
+        if (std::fabs(py) <= config::tof_corridor_half_width_mm) {
+          frame.clearance_zones |= 1U << logical_zone;
+          if (px < nearest) {
+            nearest = px;
+            frame.nearest_zone = logical_zone;
+          }
+        }
+      } else {
+        // Keep diagonal ranges compatible with avoidance/stall thresholds.
+        frame.clearance_zones |= 1U << logical_zone;
+        if (range < nearest) {
+          nearest = range;
+          frame.nearest_zone = logical_zone;
+        }
+        float lateral = sensor == 1 ? -py : py;
+        if (lateral <= 0.0f)
+          continue;
+        min_lateral = std::min(min_lateral, lateral);
+        column_x[n] = px;
+        column_y[n++] = lateral;
+        ++zones;
+      }
     }
     if (!n)
       continue;
-    std::sort(ranges, ranges + n);
-    float median = (ranges[(n - 1) / 2] + ranges[n / 2]) * 0.5f;
-    x[count] = median * col_sin[c];
-    y[count++] = median * col_cos[c];
+    // Select the median lateral point, preserving its matching forward value.
+    for (unsigned a = 1; a < n; ++a)
+      for (unsigned b = a; b > 0 && column_y[b] < column_y[b - 1]; --b) {
+        std::swap(column_y[b], column_y[b - 1]);
+        std::swap(column_x[b], column_x[b - 1]);
+      }
+    x[count] = column_x[n / 2];
+    y[count++] = column_y[n / 2];
   }
+  frame.valid = evidence;
+  frame.open = nearest >= config::sensor_max_raw;
+  frame.distance_mm = static_cast<uint16_t>(std::max(0.0f, nearest));
   if (!count)
-    return est;
+    return frame;
   est.valid = true;
-  est.min_distance_mm = std::min(front, rear);
-  est.distance_mm = est.min_distance_mm;
-  // A missing sector is open/unknown, not a copy of the opposite sector.
-  est.front_dist_mm = std::isfinite(front) ? front : config::sensor_max_raw;
-  est.rear_dist_mm = std::isfinite(rear) ? rear : config::sensor_max_raw;
+  est.min_distance_mm = min_lateral;
+  est.distance_mm = min_lateral;
 
   unsigned best_count = 0, best_mask = 0;
   float best_error = INFINITY;
@@ -96,7 +169,7 @@ inline SideWallEstimate process_vl53l5cx(const VL53L5CX_ResultsData &data,
     }
   }
   if (best_count < 3)
-    return est;
+    return frame;
   float mx = 0.0f, my = 0.0f;
   for (unsigned k = 0; k < count; ++k) {
     if (best_mask & (1U << k)) {
@@ -114,24 +187,18 @@ inline SideWallEstimate process_vl53l5cx(const VL53L5CX_ResultsData &data,
     }
   }
   if (denominator < 1.0f)
-    return est;
+    return frame;
   float slope = numerator / denominator;
   float intercept = my - slope * mx;
   if (intercept <= 0.0f)
-    return est;
-  est.heading_error_rad = (is_left ? -1.0f : 1.0f) * std::atan(slope);
+    return frame;
+  est.heading_error_rad = (sensor == 1 ? -1.0f : 1.0f) * std::atan(slope);
   est.heading_error_deg = est.heading_error_rad * (180.0f / 3.14159265f);
   float normal = std::sqrt(1.0f + slope * slope);
   est.distance_mm = intercept / normal;
-  float half = config::side_sensor_baseline_mm * 0.5f;
-  // Conservative footprint clearances combine fitted wall and real sectors.
-  est.front_dist_mm = std::min(
-      est.front_dist_mm, std::max(0.0f, (intercept + slope * half) / normal));
-  est.rear_dist_mm = std::min(
-      est.rear_dist_mm, std::max(0.0f, (intercept - slope * half) / normal));
   est.confidence =
       (best_count / 4.0f) * (zones / 16.0f) *
       std::max(0.0f, 1.0f - best_error /
                                 (best_count * config::side_fit_tolerance_mm));
-  return est;
+  return frame;
 }

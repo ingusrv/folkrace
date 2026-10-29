@@ -8,7 +8,7 @@
  * remains independent of confidence so a pole cannot disappear in the fit.
  */
 inline SensorGuidance multizone_guidance(const RobotState &s,
-                                         const RosepinkSideSnapshot &side,
+                                         const RosepinkToFSnapshot &side,
                                          uint32_t now_us) {
   auto clamp = [](float value) {
     return std::max(-1.0f, std::min(1.0f, value));
@@ -25,15 +25,10 @@ inline SensorGuidance multizone_guidance(const RobotState &s,
                       config::front_critical_dist, config::sensor_max_raw)
           .steering;
 
-  auto fresh = [now_us](const SideWallEstimate &wall, const SensorData &front,
-                        const SensorData &rear) {
-    return wall.valid && sensor_policy::available(front, now_us) &&
-           sensor_policy::available(rear, now_us);
-  };
   bool left =
-      fresh(side.left_wall, s.dist_side_front_left, s.dist_side_rear_left);
+      side.left_wall.valid && sensor_policy::available(s.dist_left, now_us);
   bool right =
-      fresh(side.right_wall, s.dist_side_front_right, s.dist_side_rear_right);
+      side.right_wall.valid && sensor_policy::available(s.dist_right, now_us);
   float dl = left ? side.left_wall.distance_mm : config::sensor_max_raw;
   float dr = right ? side.right_wall.distance_mm : config::sensor_max_raw;
   left = left && dl < config::sensor_max_raw;
